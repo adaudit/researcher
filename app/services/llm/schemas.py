@@ -460,6 +460,79 @@ ITERATION_HEADER_SCHEMA = {
 }
 
 
+COPY_GENERATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "drafts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "draft_id": {"type": "string"},
+                    "awareness_level": {"type": "string"},
+                    "format": {"type": "string"},
+                    "hook": {"type": "string"},
+                    "body": {"type": "string"},
+                    "cta": {"type": "string"},
+                    "mechanism_bridge": {"type": "string"},
+                    "proof_elements_used": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "anti_generic_check": {"type": "string"},
+                    "word_count": {"type": "integer"},
+                },
+            },
+        },
+    },
+}
+
+
+HOOK_GENERATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hooks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "hook_text": {"type": "string"},
+                    "hook_type": {"type": "string"},
+                    "awareness_level": {"type": "string"},
+                    "proof_anchor": {"type": "string"},
+                    "mechanism_connection": {"type": "string"},
+                    "why_it_works": {"type": "string"},
+                    "strength_score": {"type": "integer"},
+                },
+            },
+        },
+        "strength_pass_notes": {"type": "string"},
+    },
+}
+
+
+HEADLINE_GENERATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headlines": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "headline_text": {"type": "string"},
+                    "headline_type": {"type": "string"},
+                    "awareness_level": {"type": "string"},
+                    "proof_anchor": {"type": "string"},
+                    "character_count": {"type": "integer"},
+                    "strength_score": {"type": "integer"},
+                    "why_it_works": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
 REFLECTION_SCHEMA = {
     "type": "object",
     "properties": {
