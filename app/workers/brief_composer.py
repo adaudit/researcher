@@ -1,17 +1,21 @@
-"""Brief Composer Worker
+"""Brief Composer Worker — LLM-powered strategic brief assembly.
 
 Input:  Approved seeds and strategic maps
-Output: Strategic briefs
+Output: Strategic briefs with mechanism bridges
 Banks:  recall from approved banks and outputs
 Guard:  Must include mechanism bridge
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from app.prompts.systems import BRIEF_COMPOSER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import BRIEF_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -24,11 +28,10 @@ class BriefComposerWorker(BaseWorker):
         write_scope=[],
         steps=[
             "recall_strategy_context",
-            "select_seed_combinations",
-            "build_hook_to_mechanism_bridge",
-            "structure_proof_sequence",
-            "compose_brief_sections",
+            "assemble_all_strategic_inputs",
+            "llm_compose_briefs",
             "validate_mechanism_bridge",
+            "anti_generic_check",
         ],
         quality_checks=[
             "brief_must_include_mechanism_bridge",
@@ -45,53 +48,54 @@ class BriefComposerWorker(BaseWorker):
         memories = await recall_for_worker(
             "brief_composer",
             account_id,
-            "mechanism proof hook desire CTA offer brief",
+            "mechanism proof hook desire CTA offer brief strategy winning creative",
             offer_id=offer_id,
-            top_k=20,
+            top_k=30,
         )
 
-        strategy_map = params.get("strategy_map", {})
-        seeds = params.get("seeds", [])
+        evidence_text = "\n".join(
+            f"[{m.get('metadata', {}).get('evidence_type', 'unknown')}] {m.get('content', '')}"
+            for m in memories
+        )
 
-        briefs: list[dict[str, Any]] = []
-        for seed in seeds:
-            brief = {
-                "seed_id": seed.get("id"),
-                "hook": seed.get("hook", ""),
-                "angle": seed.get("angle", ""),
-                "awareness_level": seed.get("awareness_level", "solution_aware"),
-                "mechanism_bridge": _build_mechanism_bridge(strategy_map),
-                "proof_sequence": _build_proof_sequence(strategy_map),
-                "cta": strategy_map.get("cta", ""),
-                "evidence_refs": [m.get("id") for m in memories[:5]],
-            }
-            briefs.append(brief)
+        # Assemble upstream strategy outputs
+        strategy_context = ""
+        for key in ("desire_map", "proof_inventory", "differentiation_map",
+                     "hook_territory_map", "strategy_map"):
+            data = params.get(key)
+            if data:
+                strategy_context += f"\n## {key.replace('_', ' ').title()}\n{json.dumps(data, indent=1, default=str)[:2000]}\n"
+
+        seeds = params.get("seeds", [])
+        seed_text = json.dumps(seeds, indent=1, default=str) if seeds else "No specific seeds — generate from evidence."
+
+        analysis = await llm_client.generate(
+            system_prompt=BRIEF_COMPOSER_SYSTEM,
+            user_prompt=(
+                f"Compose strategic briefs using the following inputs.\n\n"
+                f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n\n"
+                f"STRATEGY CONTEXT:\n{strategy_context}\n\n"
+                f"SEEDS:\n{seed_text}\n\n"
+                f"Create 3-5 briefs targeting different awareness levels. "
+                f"Each MUST have a mechanism bridge and anti-generic rules."
+            ),
+            tier=ModelTier.ADVANCED,
+            temperature=0.4,
+            max_tokens=8000,
+            json_schema=BRIEF_SCHEMA,
+            context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
+        )
 
         quality_warnings: list[str] = []
-        for brief in briefs:
-            if not brief["mechanism_bridge"]:
-                quality_warnings.append(f"Brief {brief['seed_id']} missing mechanism bridge")
+        for brief in analysis.get("briefs", []):
+            if not brief.get("mechanism_bridge"):
+                quality_warnings.append(
+                    f"Brief '{brief.get('brief_id', '?')}' missing mechanism bridge"
+                )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=True,
-            data={"briefs": briefs, "brief_count": len(briefs)},
+            success=not analysis.get("_parse_error"),
+            data={"brief_pack": analysis},
             quality_warnings=quality_warnings,
         )
-
-
-def _build_mechanism_bridge(strategy_map: dict) -> str:
-    mechanism = strategy_map.get("mechanism", "")
-    if mechanism:
-        return f"Bridge to mechanism: {mechanism}"
-    return ""
-
-
-def _build_proof_sequence(strategy_map: dict) -> list[str]:
-    proof = strategy_map.get("proof_hierarchy", {})
-    sequence: list[str] = []
-    for category in ("scientific", "authority", "social", "product"):
-        items = proof.get(category, [])
-        if items:
-            sequence.append(f"{category}: {items[0].get('statement', '')}" if isinstance(items[0], dict) else f"{category}: {items[0]}")
-    return sequence

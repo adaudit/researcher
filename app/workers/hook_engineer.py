@@ -1,17 +1,20 @@
-"""Hook Engineer Worker
+"""Hook Engineer Worker — LLM-powered hook territory design.
 
 Input:  Desire map, awareness map, proof inventory
-Output: Hook territories and examples
+Output: Hook territories organized by awareness level
 Banks:  recall from offer, VOC, creative, reflection banks
-Guard:  Awareness level must be explicit
+Guard:  Awareness level must be explicit; no generic hooks
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import HOOK_ENGINEER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import HOOK_TERRITORY_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -23,12 +26,11 @@ class HookEngineerWorker(BaseWorker):
         recall_scope=[BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.REFLECTION],
         write_scope=[],
         steps=[
-            "recall_winning_hooks",
-            "recall_desire_clusters",
-            "recall_proof_elements",
-            "map_hooks_by_awareness_level",
-            "generate_hook_territories",
+            "recall_strategic_context",
+            "assemble_desire_and_proof_inputs",
+            "llm_generate_hook_territories",
             "validate_awareness_alignment",
+            "anti_generic_check",
         ],
         quality_checks=[
             "every_hook_must_state_awareness_level",
@@ -42,41 +44,60 @@ class HookEngineerWorker(BaseWorker):
         offer_id = worker_input.offer_id
         params = worker_input.params
 
-        # Recall hook-relevant memories
+        # Recall hook-relevant context
         memories = await recall_for_worker(
             "hook_engineer",
             account_id,
-            "hook angle opening headline desire pain proof mechanism",
+            "hook angle opening headline desire pain proof mechanism winning creative objection",
             offer_id=offer_id,
-            top_k=30,
+            top_k=40,
         )
 
-        awareness_levels = ["unaware", "problem_aware", "solution_aware", "product_aware", "most_aware"]
+        evidence_text = "\n".join(
+            f"[{m.get('metadata', {}).get('evidence_type', 'unknown')}] {m.get('content', '')}"
+            for m in memories
+        )
+
+        # Include upstream strategy maps if available
         desire_map = params.get("desire_map", {})
+        proof_inventory = params.get("proof_inventory", {})
+        diff_map = params.get("differentiation_map", {})
 
-        hook_territories: dict[str, list[dict[str, Any]]] = {level: [] for level in awareness_levels}
+        upstream_context = ""
+        if desire_map:
+            upstream_context += f"\nDESIRE MAP:\n{_format_dict(desire_map)}\n"
+        if proof_inventory:
+            upstream_context += f"\nPROOF INVENTORY:\n{_format_dict(proof_inventory)}\n"
+        if diff_map:
+            upstream_context += f"\nDIFFERENTIATION MAP:\n{_format_dict(diff_map)}\n"
 
-        # Extract existing winning hooks
-        for mem in memories:
-            content = mem.get("content", "")
-            metadata = mem.get("metadata", {})
-            if metadata.get("evidence_type") == "hook_pattern":
-                # Assign to appropriate awareness level
-                for level in awareness_levels:
-                    hook_territories[level].append({
-                        "hook": content,
-                        "source": "winning_creative",
-                        "evidence_ref": mem.get("id"),
-                        "awareness_level": level,
-                    })
-                    break  # Assign to first level as default
+        analysis = await llm_client.generate(
+            system_prompt=HOOK_ENGINEER_SYSTEM,
+            user_prompt=(
+                f"Design hook territories for this offer based on the evidence below.\n\n"
+                f"Create hooks for ALL 5 awareness levels. "
+                f"Each hook must have a proof anchor and mechanism connection.\n\n"
+                f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n"
+                f"{upstream_context}"
+            ),
+            tier=ModelTier.ADVANCED,
+            temperature=0.5,  # Higher for creative output
+            max_tokens=6000,
+            json_schema=HOOK_TERRITORY_SCHEMA,
+            context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
+        )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=True,
+            success=not analysis.get("_parse_error"),
             data={
-                "hook_territory_map": hook_territories,
+                "hook_territory_map": analysis,
                 "evidence_count": len(memories),
-                "desires_used": len(desire_map.get("wants", [])),
             },
         )
+
+
+def _format_dict(d: dict) -> str:
+    """Compact dict formatting for prompt inclusion."""
+    import json
+    return json.dumps(d, indent=1, default=str)[:3000]

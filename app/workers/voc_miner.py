@@ -1,7 +1,7 @@
-"""VOC Miner Worker
+"""VOC Miner Worker — LLM-powered voice-of-customer intelligence.
 
 Input:  Comments, reviews, FAQs, tickets
-Output: Pain clusters, desire language, objections
+Output: Pain clusters, desire language, objections with exact snippets
 Banks:  retain to VOC bank
 Guard:  Exact snippets must be preserved
 """
@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import VOC_MINER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import retain_observation
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import VOC_ANALYSIS_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -23,12 +26,10 @@ class VOCMinerWorker(BaseWorker):
         recall_scope=[BankType.VOC],
         write_scope=[BankType.VOC],
         steps=[
-            "parse_raw_comments",
-            "classify_sentiment_and_intent",
-            "cluster_pain_themes",
-            "extract_desire_language",
-            "extract_objections",
+            "assemble_raw_voc_data",
+            "llm_mine_desires_pains_objections",
             "preserve_exact_snippets",
+            "cluster_by_theme",
             "retain_voc_observations",
         ],
         quality_checks=[
@@ -48,95 +49,132 @@ class VOCMinerWorker(BaseWorker):
         source_url = params.get("source_url", "")
         artifact_id = params.get("artifact_id")
 
-        pain_clusters: dict[str, list[str]] = {}
-        desire_phrases: list[str] = []
-        objections: list[str] = []
+        if not comments:
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["No comments provided"],
+            )
 
-        for comment in comments:
-            text = comment if isinstance(comment, str) else comment.get("text", "")
-            if not text.strip():
-                continue
+        # Format comments for analysis
+        comment_text = "\n---\n".join(
+            c if isinstance(c, str) else c.get("text", "")
+            for c in comments
+        )
 
-            category, snippet = _classify_voc(text)
+        # LLM analysis — STANDARD for deep VOC mining
+        analysis = await llm_client.generate(
+            system_prompt=VOC_MINER_SYSTEM,
+            user_prompt=(
+                f"Analyze these {len(comments)} customer comments/reviews. "
+                f"Extract desire clusters, pain clusters, objections, and language patterns.\n\n"
+                f"COMMENTS:\n{comment_text}"
+            ),
+            tier=ModelTier.STANDARD,
+            temperature=0.2,
+            max_tokens=6000,
+            json_schema=VOC_ANALYSIS_SCHEMA,
+            context_documents=[comment_text] if len(comment_text) > 3000 else None,
+        )
 
-            if category == "pain":
-                theme = _extract_theme(text)
-                pain_clusters.setdefault(theme, []).append(snippet)
-            elif category == "desire":
-                desire_phrases.append(snippet)
-            elif category == "objection":
-                objections.append(snippet)
+        if analysis.get("_parse_error"):
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["Failed to parse VOC analysis"],
+            )
 
-            # Retain every meaningful comment
-            if category != "noise":
-                result = await retain_observation(
-                    account_id=account_id,
-                    bank_type=BankType.VOC,
-                    content=f"Customer {category}: \"{snippet}\"",
-                    offer_id=offer_id,
-                    artifact_id=artifact_id,
-                    source_type="upload",
-                    source_url=source_url,
-                    evidence_type=f"audience_{category}",
-                    confidence_score=0.8,
-                    extra_metadata={"exact_snippet": snippet, "category": category},
-                )
-                if result:
-                    observations.append({
-                        "type": category,
-                        "snippet": snippet[:100],
-                        "memory_ref": result.get("id"),
-                    })
+        # Retain desire clusters with exact phrases
+        for cluster in analysis.get("desire_clusters", []):
+            phrases = cluster.get("exact_phrases", [])
+            result = await retain_observation(
+                account_id=account_id,
+                bank_type=BankType.VOC,
+                content=(
+                    f"Desire cluster: {cluster.get('theme', 'unspecified')} "
+                    f"(intensity: {cluster.get('intensity', 'medium')}). "
+                    f"Exact phrases: {'; '.join(phrases[:5])}"
+                ),
+                offer_id=offer_id,
+                artifact_id=artifact_id,
+                source_type="upload",
+                source_url=source_url,
+                evidence_type="audience_desire",
+                confidence_score=0.85,
+                extra_metadata={
+                    "exact_phrases": phrases,
+                    "frequency": cluster.get("frequency", 0),
+                    "theme": cluster.get("theme"),
+                },
+            )
+            if result:
+                observations.append({
+                    "type": "desire",
+                    "theme": cluster.get("theme"),
+                    "memory_ref": result.get("id"),
+                })
+
+        # Retain pain clusters
+        for cluster in analysis.get("pain_clusters", []):
+            phrases = cluster.get("exact_phrases", [])
+            await retain_observation(
+                account_id=account_id,
+                bank_type=BankType.VOC,
+                content=(
+                    f"Pain cluster: {cluster.get('theme', 'unspecified')} "
+                    f"(intensity: {cluster.get('intensity', 'medium')}). "
+                    f"Exact phrases: {'; '.join(phrases[:5])}"
+                ),
+                offer_id=offer_id,
+                artifact_id=artifact_id,
+                source_type="upload",
+                source_url=source_url,
+                evidence_type="audience_pain",
+                confidence_score=0.85,
+                extra_metadata={"exact_phrases": phrases, "theme": cluster.get("theme")},
+            )
+
+        # Retain objections
+        for obj in analysis.get("objections", []):
+            phrases = obj.get("exact_phrases", [])
+            await retain_observation(
+                account_id=account_id,
+                bank_type=BankType.VOC,
+                content=(
+                    f"Objection: {obj.get('objection', '')}. "
+                    f"Underlying fear: {obj.get('underlying_fear', 'unknown')}. "
+                    f"Exact phrases: {'; '.join(phrases[:3])}"
+                ),
+                offer_id=offer_id,
+                artifact_id=artifact_id,
+                source_type="upload",
+                source_url=source_url,
+                evidence_type="audience_objection",
+                confidence_score=0.8,
+                extra_metadata={"exact_phrases": phrases},
+            )
+
+        # Retain language patterns
+        lang = analysis.get("language_patterns", {})
+        if lang.get("words_they_use"):
+            await retain_observation(
+                account_id=account_id,
+                bank_type=BankType.VOC,
+                content=(
+                    f"Customer language patterns — "
+                    f"Key words: {', '.join(lang['words_they_use'][:10])}. "
+                    f"Metaphors: {', '.join(lang.get('metaphors', [])[:5])}. "
+                    f"Emotional triggers: {', '.join(lang.get('emotional_triggers', [])[:5])}."
+                ),
+                offer_id=offer_id,
+                source_type="upload",
+                evidence_type="language_pattern",
+                confidence_score=0.8,
+            )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
             success=True,
-            data={
-                "total_comments": len(comments),
-                "pain_clusters": {k: len(v) for k, v in pain_clusters.items()},
-                "desire_count": len(desire_phrases),
-                "objection_count": len(objections),
-                "pain_details": pain_clusters,
-                "desires": desire_phrases,
-                "objections": objections,
-            },
+            data={"voc_analysis": analysis},
             observations=observations,
         )
-
-
-def _classify_voc(text: str) -> tuple[str, str]:
-    text_lower = text.lower()
-    snippet = text.strip()[:500]
-
-    pain_signals = ["problem", "struggle", "frustrated", "annoyed", "hate", "wish",
-                    "can't", "doesn't work", "disappointed", "pain", "suffering"]
-    desire_signals = ["want", "need", "looking for", "hoping", "would love",
-                      "dream", "finally", "perfect", "amazing", "love"]
-    objection_signals = ["but", "however", "expensive", "scam", "doubt", "skeptic",
-                         "doesn't seem", "too good", "worried", "concern", "trust"]
-
-    if any(s in text_lower for s in objection_signals):
-        return "objection", snippet
-    if any(s in text_lower for s in pain_signals):
-        return "pain", snippet
-    if any(s in text_lower for s in desire_signals):
-        return "desire", snippet
-    if len(text.strip()) > 20:
-        return "general", snippet
-    return "noise", snippet
-
-
-def _extract_theme(text: str) -> str:
-    """Simple keyword-based theme extraction."""
-    text_lower = text.lower()
-    themes = {
-        "side_effects": ["side effect", "reaction", "symptom"],
-        "price": ["expensive", "cost", "price", "afford"],
-        "effectiveness": ["doesn't work", "no results", "waste"],
-        "trust": ["scam", "fake", "doubt", "trust"],
-        "convenience": ["hard to use", "complicated", "confusing"],
-    }
-    for theme, keywords in themes.items():
-        if any(k in text_lower for k in keywords):
-            return theme
-    return "general"

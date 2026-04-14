@@ -1,8 +1,8 @@
-"""Proof Inventory Worker
+"""Proof Inventory Worker — LLM-powered proof hierarchy and gap analysis.
 
 Input:  Claims, studies, testimonials, product facts
 Output: Proof hierarchy and proof gaps
-Banks:  recall and reflect across offer, page, research banks
+Banks:  recall across offer, page, research banks
 Guard:  Unsupported proof is forbidden
 """
 
@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import PROOF_INVENTORY_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import PROOF_INVENTORY_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -24,9 +27,8 @@ class ProofInventoryWorker(BaseWorker):
         write_scope=[],
         steps=[
             "recall_all_proof_elements",
-            "classify_proof_types",
-            "rank_proof_strength",
-            "identify_proof_gaps",
+            "llm_classify_and_rank_proof",
+            "llm_identify_gaps",
             "build_proof_hierarchy",
         ],
         quality_checks=[
@@ -43,52 +45,42 @@ class ProofInventoryWorker(BaseWorker):
         memories = await recall_for_worker(
             "proof_inventory",
             account_id,
-            "proof evidence study clinical testimonial certification result statistic",
+            "proof evidence study clinical testimonial certification result statistic claim",
             offer_id=offer_id,
-            top_k=30,
+            top_k=40,
         )
 
-        proof_items: list[dict[str, Any]] = []
-        for mem in memories:
-            content = mem.get("content", "")
-            metadata = mem.get("metadata", {})
-            proof_items.append({
-                "statement": content,
-                "proof_type": metadata.get("evidence_type", "general"),
-                "source_url": metadata.get("source_url"),
-                "confidence": metadata.get("confidence_score", 0.5),
-                "memory_ref": mem.get("id"),
-            })
+        evidence_text = "\n".join(
+            f"[{m.get('metadata', {}).get('evidence_type', 'unknown')}] {m.get('content', '')}"
+            for m in memories
+        )
 
-        # Sort by confidence (strongest first)
-        proof_items.sort(key=lambda x: x["confidence"], reverse=True)
+        analysis = await llm_client.generate(
+            system_prompt=PROOF_INVENTORY_SYSTEM,
+            user_prompt=(
+                f"Build the complete proof hierarchy from these {len(memories)} evidence items.\n\n"
+                f"Rank each proof element by type and strength. Identify all gaps.\n\n"
+                f"EVIDENCE:\n{evidence_text}"
+            ),
+            tier=ModelTier.STANDARD,
+            temperature=0.2,
+            max_tokens=6000,
+            json_schema=PROOF_INVENTORY_SCHEMA,
+            context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
+        )
 
-        # Classify into hierarchy
-        scientific = [p for p in proof_items if p["proof_type"] in ("research_finding", "scientific")]
-        social = [p for p in proof_items if p["proof_type"] in ("testimonial", "social")]
-        authority = [p for p in proof_items if p["proof_type"] in ("authority", "certification")]
-        product = [p for p in proof_items if p["proof_type"] in ("product_fact", "mechanism_insight")]
-
-        # Identify gaps
-        gaps: list[str] = []
-        if not scientific:
-            gaps.append("No scientific/clinical proof found")
-        if not social:
-            gaps.append("No social proof or testimonials found")
-        if not authority:
-            gaps.append("No authority proof found")
+        requires_review = False
+        quality_warnings: list[str] = []
+        gaps = analysis.get("proof_gaps", [])
+        if gaps:
+            quality_warnings.append(f"{len(gaps)} proof gap(s) identified")
+            if any(g.get("impact") == "high" for g in gaps):
+                requires_review = True
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=True,
-            data={
-                "proof_hierarchy": {
-                    "scientific": scientific,
-                    "social": social,
-                    "authority": authority,
-                    "product": product,
-                },
-                "total_proof_items": len(proof_items),
-                "proof_gaps": gaps,
-            },
+            success=not analysis.get("_parse_error"),
+            data={"proof_inventory": analysis, "evidence_count": len(memories)},
+            quality_warnings=quality_warnings,
+            requires_review=requires_review,
         )

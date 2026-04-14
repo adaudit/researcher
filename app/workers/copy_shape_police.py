@@ -1,43 +1,21 @@
-"""Copy Shape Police Worker
+"""Copy Shape Police Worker — LLM-powered anti-generic enforcement.
 
 Input:  Draft copy plus strategy
-Output: Flagged generic patterns and rewrite targets
+Output: Flagged generic patterns and rewrite directions
 Banks:  recall approved strategic outputs
 Guard:  Must enforce anti-generic policy
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
+from app.prompts.systems import COPY_SHAPE_POLICE_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import COPY_REVIEW_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
-
-# Patterns that signal generic LLM-style copy
-GENERIC_PATTERNS = [
-    r"\bin today'?s (?:world|society|age|fast-paced)\b",
-    r"\bunlock (?:the|your) (?:full |true )?potential\b",
-    r"\bgame[- ]?changer\b",
-    r"\brevolutionary\b",
-    r"\bcutting[- ]?edge\b",
-    r"\bseamless(?:ly)?\b",
-    r"\bholistic\b",
-    r"\bsynerg(?:y|istic|ize)\b",
-    r"\bleverage\b",
-    r"\btransformative\b",
-    r"\bone[- ]?stop[- ]?shop\b",
-    r"\bnext[- ]?level\b",
-    r"\bworld[- ]?class\b",
-    r"\bstate[- ]?of[- ]?the[- ]?art\b",
-    r"\bparadigm[- ]?shift\b",
-    r"\brobust\b",
-    r"\bsupercharge\b",
-    r"\bempowering\b",
-    r"\bimagine (?:a world|if|being)\b",
-    r"\bare you (?:tired|sick) of\b",
-]
 
 
 class CopyShapePoliceWorker(BaseWorker):
@@ -48,16 +26,14 @@ class CopyShapePoliceWorker(BaseWorker):
         recall_scope=[BankType.OFFER, BankType.CREATIVE],
         write_scope=[],
         steps=[
-            "scan_for_generic_patterns",
-            "check_proof_density",
-            "check_mechanism_presence",
-            "check_specificity_level",
-            "recall_approved_strategy",
-            "generate_rewrite_targets",
+            "recall_strategy_context",
+            "llm_analyze_copy_quality",
+            "flag_generic_patterns",
+            "generate_rewrite_directions",
         ],
         quality_checks=[
             "must_enforce_anti_generic_policy",
-            "flagged_patterns_must_include_alternatives",
+            "flagged_patterns_must_include_rewrite_directions",
         ],
     )
 
@@ -74,41 +50,34 @@ class CopyShapePoliceWorker(BaseWorker):
                 errors=["No draft text provided"],
             )
 
-        # Scan for generic patterns
-        flags: list[dict[str, Any]] = []
-        for pattern in GENERIC_PATTERNS:
-            matches = list(re.finditer(pattern, draft_text, re.IGNORECASE))
-            for match in matches:
-                flags.append({
-                    "pattern": pattern,
-                    "matched_text": match.group(),
-                    "position": match.start(),
-                    "context": draft_text[max(0, match.start() - 50):match.end() + 50],
-                    "severity": "high",
-                    "suggestion": "Replace with specific, evidence-backed language",
-                })
-
-        # Check specificity
-        word_count = len(draft_text.split())
-        specificity_score = max(0, 1.0 - (len(flags) / max(word_count / 50, 1)))
-
-        # Recall strategy for suggested replacements
+        # Recall strategy for evidence-based rewrite suggestions
         strategy_context = await recall_for_worker(
             "copy_shape_police",
             account_id,
-            "mechanism proof specific language evidence",
+            "mechanism proof specific language evidence offer unique",
             offer_id=offer_id,
-            top_k=10,
+            top_k=15,
+        )
+
+        strategy_text = "\n".join(
+            f"- {m.get('content', '')}" for m in strategy_context
+        ) if strategy_context else "No strategy context available."
+
+        analysis = await llm_client.generate(
+            system_prompt=COPY_SHAPE_POLICE_SYSTEM,
+            user_prompt=(
+                f"Review this draft copy for generic language, LLM-isms, and strategic gaps.\n\n"
+                f"AVAILABLE STRATEGY CONTEXT (use for rewrite directions):\n{strategy_text}\n\n"
+                f"DRAFT COPY:\n{draft_text}"
+            ),
+            tier=ModelTier.STANDARD,
+            temperature=0.2,
+            max_tokens=5000,
+            json_schema=COPY_REVIEW_SCHEMA,
         )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=True,
-            data={
-                "generic_flags": flags,
-                "flag_count": len(flags),
-                "word_count": word_count,
-                "specificity_score": round(specificity_score, 2),
-                "strategy_alternatives_available": len(strategy_context),
-            },
+            success=not analysis.get("_parse_error"),
+            data={"copy_review": analysis},
         )

@@ -1,20 +1,20 @@
-"""Compression Tax Worker
+"""Compression Tax Worker — LLM-powered draft compression with rationale ledger.
 
 Input:  Near-final draft
-Output: Reduction plan and rationale ledger
+Output: Reduction plan, revised draft, and rationale ledger
 Banks:  recall offer and proof map
 Guard:  Can only preserve extra text if it adds strategic value
-
-Rule: Cut 5-10% of non-offer text unless the added text contributes a
-proof artifact, correction example, threshold line, or story element.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import COMPRESSION_TAX_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import COMPRESSION_TAX_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -27,10 +27,8 @@ class CompressionTaxWorker(BaseWorker):
         write_scope=[],
         steps=[
             "recall_offer_and_proof_context",
-            "segment_draft_into_blocks",
-            "classify_each_block_role",
-            "apply_compression_rules",
-            "generate_reduction_plan",
+            "llm_segment_and_classify",
+            "llm_apply_compression_rules",
             "build_rationale_ledger",
         ],
         quality_checks=[
@@ -64,80 +62,52 @@ class CompressionTaxWorker(BaseWorker):
             top_k=10,
         )
 
-        # Segment and classify
-        paragraphs = [p.strip() for p in draft_text.split("\n\n") if p.strip()]
+        context_text = "\n".join(
+            f"- {m.get('content', '')}" for m in offer_context
+        ) if offer_context else "No offer context available."
+
         original_word_count = len(draft_text.split())
 
-        ledger: list[dict[str, Any]] = []
-        preserved: list[str] = []
-        removed: list[str] = []
+        analysis = await llm_client.generate(
+            system_prompt=COMPRESSION_TAX_SYSTEM,
+            user_prompt=(
+                f"Apply the compression tax to this draft ({original_word_count} words). "
+                f"Target: cut 5-10% of non-offer text.\n\n"
+                f"OFFER CONTEXT (what must be preserved):\n{context_text}\n\n"
+                f"DRAFT:\n{draft_text}"
+            ),
+            tier=ModelTier.STANDARD,
+            temperature=0.1,
+            max_tokens=8000,
+            json_schema=COMPRESSION_TAX_SCHEMA,
+            context_documents=[draft_text] if len(draft_text) > 3000 else None,
+        )
 
-        for para in paragraphs:
-            role = _classify_block_role(para)
-            if role in ("proof_artifact", "correction_example", "threshold_line", "story_element", "mechanism", "cta"):
-                preserved.append(para)
-                ledger.append({"text": para[:100], "role": role, "action": "preserve", "reason": f"Contains {role}"})
-            elif role == "generic_filler":
-                removed.append(para)
-                ledger.append({"text": para[:100], "role": role, "action": "remove", "reason": "Generic filler with no strategic value"})
-            else:
-                preserved.append(para)
-                ledger.append({"text": para[:100], "role": role, "action": "preserve", "reason": "Kept pending review"})
+        if analysis.get("_parse_error"):
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["Failed to parse compression analysis"],
+            )
 
-        revised_text = "\n\n".join(preserved)
-        revised_word_count = len(revised_text.split())
-        reduction_pct = round((1 - revised_word_count / max(original_word_count, 1)) * 100, 1)
+        # Reconstruct revised draft from blocks
+        revised_blocks = [
+            b.get("revised_text", b.get("original_text", ""))
+            for b in analysis.get("blocks", [])
+            if b.get("action") != "delete"
+        ]
+        revised_draft = "\n\n".join(revised_blocks)
+        revised_word_count = len(revised_draft.split())
+
+        analysis["revised_draft"] = revised_draft
+        analysis["original_word_count"] = original_word_count
+        analysis["revised_word_count"] = revised_word_count
+        analysis["reduction_percentage"] = round(
+            (1 - revised_word_count / max(original_word_count, 1)) * 100, 1
+        )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
             success=True,
-            data={
-                "revised_draft": revised_text,
-                "original_word_count": original_word_count,
-                "revised_word_count": revised_word_count,
-                "reduction_percentage": reduction_pct,
-                "rationale_ledger": ledger,
-                "removed_blocks": len(removed),
-                "preserved_blocks": len(preserved),
-            },
+            data={"compression_result": analysis},
         )
-
-
-def _classify_block_role(text: str) -> str:
-    text_lower = text.lower()
-
-    proof_signals = ["study", "clinical", "proven", "research", "published", "%",
-                     "customers", "testimonial", "certified", "doctor"]
-    if any(s in text_lower for s in proof_signals):
-        return "proof_artifact"
-
-    mechanism_signals = ["works by", "mechanism", "how it works", "the reason",
-                         "because", "what makes"]
-    if any(s in text_lower for s in mechanism_signals):
-        return "mechanism"
-
-    cta_signals = ["order now", "buy now", "get started", "try", "click", "add to cart",
-                   "sign up", "subscribe"]
-    if any(s in text_lower for s in cta_signals):
-        return "cta"
-
-    correction_signals = ["unlike", "instead of", "not like", "the problem with",
-                          "most people think", "the truth is"]
-    if any(s in text_lower for s in correction_signals):
-        return "correction_example"
-
-    threshold_signals = ["what if", "imagine", "picture this", "there's a moment"]
-    if any(s in text_lower for s in threshold_signals):
-        return "threshold_line"
-
-    # Check for generic filler
-    generic_signals = ["in today's", "in conclusion", "furthermore", "moreover",
-                       "it goes without saying", "it's no secret", "at the end of the day"]
-    if any(s in text_lower for s in generic_signals):
-        return "generic_filler"
-
-    # Short connective text is likely filler
-    if len(text.split()) < 15:
-        return "connective"
-
-    return "body_text"

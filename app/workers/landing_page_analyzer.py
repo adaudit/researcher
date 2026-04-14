@@ -1,4 +1,4 @@
-"""Landing Page Analyzer Worker
+"""Landing Page Analyzer Worker — LLM-powered page decomposition.
 
 Input:  URL, HTML, screenshot
 Output: Page structure, claims, proof inventory, friction map
@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import LANDING_PAGE_ANALYZER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker, retain_observation
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import LANDING_PAGE_ANALYSIS_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -23,14 +26,11 @@ class LandingPageAnalyzerWorker(BaseWorker):
         recall_scope=[BankType.LANDING_PAGE, BankType.OFFER],
         write_scope=[BankType.LANDING_PAGE],
         steps=[
-            "parse_page_structure",
-            "extract_headline_hierarchy",
-            "identify_visible_claims",
-            "inventory_proof_elements",
-            "map_friction_points",
-            "detect_cta_patterns",
             "recall_offer_context",
-            "compare_claims_to_offer",
+            "assemble_page_content",
+            "llm_analyze_page_structure",
+            "llm_extract_claims_and_proof",
+            "llm_identify_friction",
             "retain_page_observations",
         ],
         quality_checks=[
@@ -51,106 +51,118 @@ class LandingPageAnalyzerWorker(BaseWorker):
         artifact_id = params.get("artifact_id")
 
         # Recall offer context for comparison
-        offer_context = await recall_for_worker(
+        offer_memories = await recall_for_worker(
             "landing_page_analyzer",
             account_id,
-            "offer mechanism CTA proof basis constraints",
+            "offer mechanism CTA proof basis constraints target audience",
             offer_id=offer_id,
             top_k=10,
         )
+        offer_context = "\n".join(
+            f"- {m.get('content', '')}" for m in offer_memories
+        ) if offer_memories else "No offer context available yet."
 
-        # Extract headline hierarchy
-        headlines = [b for b in text_blocks if b.get("tag", "").startswith("h")]
-        page_structure = {
-            "url": page_url,
-            "headline_hierarchy": headlines,
-            "total_text_blocks": len(text_blocks),
-            "sections": _group_by_section(text_blocks),
-        }
+        # Assemble page content for analysis
+        page_content = "\n".join(
+            f"[{b.get('tag', 'p')}] {b.get('text', '')}"
+            for b in text_blocks
+            if b.get("text")
+        )
 
-        # Extract claims (from headlines and strong text blocks)
-        claims: list[dict[str, Any]] = []
-        for block in text_blocks:
-            text = block.get("text", "")
-            if _looks_like_claim(text):
-                claims.append({
-                    "text": text,
-                    "tag": block.get("tag"),
-                    "section": block.get("parent_class"),
-                    "type": "visible_claim",
-                })
+        if not page_content:
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["No page content to analyze"],
+            )
 
-        # Identify proof elements
-        proof_elements: list[dict[str, Any]] = []
-        for block in text_blocks:
-            text = block.get("text", "")
-            if _looks_like_proof(text):
-                proof_elements.append({
-                    "text": text,
-                    "section": block.get("parent_class"),
-                    "proof_type": _classify_proof(text),
-                })
+        # LLM analysis — STANDARD tier for thorough page decomposition
+        analysis = await llm_client.generate(
+            system_prompt=LANDING_PAGE_ANALYZER_SYSTEM,
+            user_prompt=(
+                f"Analyze this landing page.\n\n"
+                f"PAGE URL: {page_url}\n\n"
+                f"KNOWN OFFER CONTEXT:\n{offer_context}\n\n"
+                f"PAGE CONTENT (tag + text):\n{page_content}"
+            ),
+            tier=ModelTier.STANDARD,
+            temperature=0.2,
+            max_tokens=6000,
+            json_schema=LANDING_PAGE_ANALYSIS_SCHEMA,
+            context_documents=[page_content] if len(page_content) > 2000 else None,
+        )
 
-        # Retain key observations
-        for claim in claims[:20]:
-            result = await retain_observation(
+        if analysis.get("_parse_error"):
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["Failed to parse LLM page analysis"],
+            )
+
+        # Retain claims as observations
+        for claim in analysis.get("claims", []):
+            claim_text = claim.get("claim_text", "")
+            if claim_text:
+                result = await retain_observation(
+                    account_id=account_id,
+                    bank_type=BankType.LANDING_PAGE,
+                    content=(
+                        f"Page claim ({claim.get('claim_type', 'general')}): \"{claim_text}\". "
+                        f"Section: {claim.get('section', 'unknown')}. "
+                        f"Supported by: {claim.get('supported_by', 'none')}. "
+                        f"Risk: {claim.get('risk_level', 'standard')}."
+                    ),
+                    offer_id=offer_id,
+                    artifact_id=artifact_id,
+                    source_type="crawler",
+                    source_url=page_url,
+                    evidence_type="landing_page_claim",
+                    confidence_score=0.9,
+                )
+                if result:
+                    observations.append({"type": "claim", "memory_ref": result.get("id")})
+
+        # Retain proof elements
+        for proof in analysis.get("proof_elements", []):
+            element = proof.get("element", "")
+            if element:
+                await retain_observation(
+                    account_id=account_id,
+                    bank_type=BankType.LANDING_PAGE,
+                    content=(
+                        f"Page proof ({proof.get('proof_type', 'general')}): \"{element}\". "
+                        f"Placement: {proof.get('placement', 'unknown')}. "
+                        f"Effectiveness: {proof.get('effectiveness', 'unknown')}."
+                    ),
+                    offer_id=offer_id,
+                    artifact_id=artifact_id,
+                    source_type="crawler",
+                    source_url=page_url,
+                    evidence_type="proof_claim",
+                    confidence_score=0.85,
+                )
+
+        # Retain friction points
+        for friction in analysis.get("friction_points", []):
+            await retain_observation(
                 account_id=account_id,
                 bank_type=BankType.LANDING_PAGE,
-                content=f"Landing page claim: {claim['text']}",
+                content=(
+                    f"Friction ({friction.get('impact', 'medium')}): {friction.get('friction', '')}. "
+                    f"Location: {friction.get('location', 'unknown')}. "
+                    f"Fix: {friction.get('fix', 'not specified')}."
+                ),
                 offer_id=offer_id,
                 artifact_id=artifact_id,
                 source_type="crawler",
                 source_url=page_url,
-                evidence_type="landing_page_claim",
-                confidence_score=0.85,
+                evidence_type="friction_point",
+                confidence_score=0.8,
             )
-            if result:
-                observations.append({"type": "claim", "memory_ref": result.get("id")})
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
             success=True,
-            data={
-                "page_structure": page_structure,
-                "claims": claims,
-                "proof_elements": proof_elements,
-                "offer_context_used": len(offer_context),
-            },
+            data={"page_analysis": analysis},
             observations=observations,
         )
-
-
-def _group_by_section(blocks: list[dict]) -> list[dict]:
-    sections: dict[str, list] = {}
-    for b in blocks:
-        key = b.get("parent_class", "unknown")
-        sections.setdefault(key, []).append(b)
-    return [{"section": k, "blocks": v} for k, v in sections.items()]
-
-
-def _looks_like_claim(text: str) -> bool:
-    if len(text) < 10 or len(text) > 300:
-        return False
-    claim_signals = ["will", "can", "proven", "guaranteed", "results", "transform",
-                     "discover", "secret", "breakthrough", "finally", "solution"]
-    text_lower = text.lower()
-    return any(s in text_lower for s in claim_signals)
-
-
-def _looks_like_proof(text: str) -> bool:
-    proof_signals = ["study", "clinical", "published", "doctor", "certified",
-                     "tested", "verified", "%", "customers", "reviews", "rated",
-                     "award", "patent", "research"]
-    text_lower = text.lower()
-    return any(s in text_lower for s in proof_signals)
-
-
-def _classify_proof(text: str) -> str:
-    text_lower = text.lower()
-    if any(w in text_lower for w in ["study", "clinical", "research", "published"]):
-        return "scientific"
-    if any(w in text_lower for w in ["customer", "review", "testimonial", "rated"]):
-        return "social"
-    if any(w in text_lower for w in ["doctor", "certified", "expert", "award"]):
-        return "authority"
-    return "general"

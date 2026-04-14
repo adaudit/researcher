@@ -1,6 +1,6 @@
-"""Audience Psychology Worker
+"""Audience Psychology Worker — LLM-powered desire and motivation mapping.
 
-Input:  Normalized evidence
+Input:  Normalized evidence from recall
 Output: Desire map, fear map, awareness map
 Banks:  recall from offer, VOC, creative, reflection banks
 Guard:  Must not exceed evidence coverage
@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import AUDIENCE_PSYCHOLOGY_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import DESIRE_MAP_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -21,14 +24,11 @@ class AudiencePsychologyWorker(BaseWorker):
         purpose="Map audience desires, fears, identity motives, and awareness levels from evidence",
         accepted_input_types=["evidence_set", "recall_query"],
         recall_scope=[BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.REFLECTION],
-        write_scope=[],  # produces strategy outputs, does not retain directly
+        write_scope=[],
         steps=[
             "recall_audience_evidence",
-            "cluster_desires",
-            "cluster_fears",
-            "identify_identity_motives",
-            "map_awareness_levels",
-            "validate_coverage",
+            "llm_synthesize_desire_map",
+            "validate_evidence_coverage",
             "produce_desire_map",
         ],
         quality_checks=[
@@ -43,42 +43,56 @@ class AudiencePsychologyWorker(BaseWorker):
         account_id = worker_input.account_id
         offer_id = worker_input.offer_id
 
-        # Recall audience-relevant memories
+        # Recall broadly across audience-relevant banks
         memories = await recall_for_worker(
             "audience_psychology",
             account_id,
-            "audience desires fears pain objections motivation identity",
+            "audience desires fears pain objections motivation identity language what they want",
             offer_id=offer_id,
-            top_k=30,
+            top_k=40,
         )
 
-        desires: list[dict[str, Any]] = []
-        fears: list[dict[str, Any]] = []
-        identity_motives: list[dict[str, Any]] = []
+        if not memories:
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["No audience evidence available. Run VOC mining and offer analysis first."],
+            )
 
-        for mem in memories:
-            content = mem.get("content", "")
-            metadata = mem.get("metadata", {})
-            evidence_type = metadata.get("evidence_type", "")
-            ref = mem.get("id", "")
+        # Format evidence for LLM
+        evidence_text = "\n".join(
+            f"[{m.get('metadata', {}).get('evidence_type', 'unknown')}] {m.get('content', '')}"
+            for m in memories
+        )
 
-            if evidence_type == "audience_desire":
-                desires.append({"statement": content, "evidence_ref": ref})
-            elif evidence_type == "audience_objection":
-                fears.append({"statement": content, "evidence_ref": ref, "type": "objection"})
-            elif "pain" in evidence_type:
-                fears.append({"statement": content, "evidence_ref": ref, "type": "pain"})
+        # LLM synthesis — ADVANCED tier for deep psychological mapping
+        analysis = await llm_client.generate(
+            system_prompt=AUDIENCE_PSYCHOLOGY_SYSTEM,
+            user_prompt=(
+                f"Based on the following {len(memories)} pieces of evidence, "
+                f"build a complete audience desire map.\n\n"
+                f"Do NOT exceed the evidence. If a category has no evidence, say so.\n\n"
+                f"EVIDENCE:\n{evidence_text}"
+            ),
+            tier=ModelTier.ADVANCED,
+            temperature=0.3,
+            max_tokens=6000,
+            json_schema=DESIRE_MAP_SCHEMA,
+            context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
+        )
 
-        desire_map = {
-            "wants": desires,
-            "pain_escapes": [f for f in fears if f.get("type") == "pain"],
-            "identity_motives": identity_motives,
-            "objections": [f for f in fears if f.get("type") == "objection"],
-            "evidence_count": len(memories),
-        }
+        if analysis.get("_parse_error"):
+            return WorkerOutput(
+                worker_name=self.contract.skill_name,
+                success=False,
+                errors=["Failed to parse desire map"],
+            )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
             success=True,
-            data={"desire_map": desire_map},
+            data={
+                "desire_map": analysis,
+                "evidence_count": len(memories),
+            },
         )

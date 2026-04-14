@@ -1,8 +1,8 @@
-"""Differentiation Worker
+"""Differentiation Worker — LLM-powered sameness and contrast mapping.
 
 Input:  Offer map plus market context
 Output: Consequence map and contrast points
-Banks:  recall and reflect across offer, creative, research banks
+Banks:  recall across offer, creative, research banks
 Guard:  Comparison logic must be explicit
 """
 
@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompts.systems import DIFFERENTIATION_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.schemas import DIFFERENTIATION_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
 
@@ -24,9 +27,8 @@ class DifferentiationWorker(BaseWorker):
         write_scope=[],
         steps=[
             "recall_offer_and_market_context",
-            "identify_category_sameness",
-            "extract_unique_contrasts",
-            "build_consequence_framing",
+            "llm_identify_sameness_and_contrasts",
+            "llm_build_consequence_framing",
             "validate_comparison_logic",
         ],
         quality_checks=[
@@ -43,35 +45,32 @@ class DifferentiationWorker(BaseWorker):
         memories = await recall_for_worker(
             "differentiation",
             account_id,
-            "offer mechanism competitor comparison unique different alternative",
+            "offer mechanism competitor comparison unique different alternative market category",
             offer_id=offer_id,
-            top_k=25,
+            top_k=30,
         )
 
-        # Analyze for sameness and contrasts
-        category_sameness: list[str] = []
-        contrasts: list[dict[str, Any]] = []
-        consequences: list[dict[str, Any]] = []
+        evidence_text = "\n".join(
+            f"[{m.get('metadata', {}).get('evidence_type', 'unknown')}] {m.get('content', '')}"
+            for m in memories
+        )
 
-        for mem in memories:
-            content = mem.get("content", "")
-            if "competitive_signal" in mem.get("metadata", {}).get("evidence_type", ""):
-                category_sameness.append(content)
-            elif "mechanism" in mem.get("metadata", {}).get("evidence_type", ""):
-                contrasts.append({
-                    "point": content,
-                    "evidence_ref": mem.get("id"),
-                })
+        analysis = await llm_client.generate(
+            system_prompt=DIFFERENTIATION_SYSTEM,
+            user_prompt=(
+                f"Analyze this offer's differentiation based on {len(memories)} evidence items.\n\n"
+                f"Start with what's the SAME as everything else. "
+                f"Then find genuine contrasts and build consequence framing.\n\n"
+                f"EVIDENCE:\n{evidence_text}"
+            ),
+            tier=ModelTier.ADVANCED,
+            temperature=0.3,
+            max_tokens=5000,
+            json_schema=DIFFERENTIATION_SCHEMA,
+        )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=True,
-            data={
-                "differentiation_map": {
-                    "category_sameness": category_sameness,
-                    "contrasts": contrasts,
-                    "consequence_framing": consequences,
-                    "evidence_count": len(memories),
-                }
-            },
+            success=not analysis.get("_parse_error"),
+            data={"differentiation_map": analysis, "evidence_count": len(memories)},
         )
