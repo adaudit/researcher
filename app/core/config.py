@@ -31,8 +31,12 @@ class Settings(BaseSettings):
     HINDSIGHT_API_KEY: str = ""
     HINDSIGHT_BASE_URL: str = "https://api.hindsight.dev"
 
-    # External APIs
+    # LLM Providers
+    ANTHROPIC_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+
+    # External APIs
     META_AD_LIBRARY_ACCESS_TOKEN: str = ""
     NCBI_API_KEY: str = ""
 

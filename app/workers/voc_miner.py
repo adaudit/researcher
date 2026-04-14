@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.knowledge.base_training import get_training_context
+from app.knowledge.extraction_frameworks import get_framework_prompt
 from app.prompts.systems import VOC_MINER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import retain_observation
-from app.services.llm.client import ModelTier, llm_client
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import VOC_ANALYSIS_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -62,19 +64,26 @@ class VOCMinerWorker(BaseWorker):
             for c in comments
         )
 
-        # LLM analysis — STANDARD for deep VOC mining
-        analysis = await llm_client.generate(
-            system_prompt=VOC_MINER_SYSTEM,
+        # LLM analysis — using router for best model selection
+        training_context = get_training_context(include_examples=True)
+        extraction_framework = get_framework_prompt("voc")
+
+        analysis = await router.generate(
+            capability=Capability.STRATEGIC_REASONING,
+            system_prompt=(
+                VOC_MINER_SYSTEM + "\n\n"
+                + training_context + "\n\n"
+                + extraction_framework
+            ),
             user_prompt=(
                 f"Analyze these {len(comments)} customer comments/reviews. "
-                f"Extract desire clusters, pain clusters, objections, and language patterns.\n\n"
+                f"Follow the extraction framework targets exactly.\n\n"
                 f"COMMENTS:\n{comment_text}"
             ),
-            tier=ModelTier.STANDARD,
             temperature=0.2,
             max_tokens=6000,
             json_schema=VOC_ANALYSIS_SCHEMA,
-            context_documents=[comment_text] if len(comment_text) > 3000 else None,
+            context_documents=[training_context, extraction_framework],
         )
 
         if analysis.get("_parse_error"):
