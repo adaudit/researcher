@@ -4,6 +4,11 @@ Every worker conforms to one contract shape so the orchestrator can reason
 about execution consistently. Workers should not chat with memory casually —
 they invoke memory operations as explicit workflow steps.
 
+Architecture: Extractors and Analysts are SEPARATE concerns.
+- Extractors (app/workers/extractors/) pull data from raw sources
+- Analysts (this level) reason about extracted data
+- Both share this base contract
+
 Contract fields:
   skill_name       — stable worker identifier
   purpose          — narrow scope statement
