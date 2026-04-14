@@ -533,6 +533,159 @@ HEADLINE_GENERATION_SCHEMA = {
 }
 
 
+ORGANIC_DISCOVERY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "seeds": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "seed_text": {"type": "string"},
+                    "source_type": {"type": "string"},
+                    "source_platform": {"type": "string"},
+                    "source_url": {"type": "string"},
+                    "hook_extracted": {"type": "string"},
+                    "format_type": {"type": "string"},
+                    "angle_extracted": {"type": "string"},
+                    "potential": {"type": "string"},
+                    "relevance_to_offer": {"type": "string"},
+                },
+            },
+        },
+        "trend_signals": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "trend": {"type": "string"},
+                    "platform": {"type": "string"},
+                    "relevance": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
+SWIPE_MINER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "swipes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "ad_text": {"type": "string"},
+                    "advertiser": {"type": "string"},
+                    "platform": {"type": "string"},
+                    "format_type": {"type": "string"},
+                    "running_duration": {"type": "string"},
+                    "spend_signal": {"type": "string"},
+                    "hook_analysis": {"type": "string"},
+                    "angle_analysis": {"type": "string"},
+                    "proof_elements": {"type": "array", "items": {"type": "string"}},
+                    "seed_potential": {"type": "string"},
+                },
+            },
+        },
+        "competitive_themes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "theme": {"type": "string"},
+                    "frequency": {"type": "integer"},
+                    "saturation_level": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
+COVERAGE_MATRIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "segment_coverage": {
+            "type": "object",
+            "properties": {
+                "active": {"type": "array", "items": {"type": "string"}},
+                "untested": {"type": "array", "items": {"type": "string"}},
+                "gap_severity": {"type": "string"},
+            },
+        },
+        "awareness_coverage": {
+            "type": "object",
+            "properties": {
+                "over_indexed": {"type": "string"},
+                "under_indexed": {"type": "string"},
+                "gap_severity": {"type": "string"},
+            },
+        },
+        "cash_coverage": {
+            "type": "object",
+            "properties": {
+                "concepts_tested": {"type": "integer"},
+                "angles_tested": {"type": "integer"},
+                "styles_tested": {"type": "integer"},
+                "hooks_tested": {"type": "integer"},
+                "clustering": {"type": "string"},
+            },
+        },
+        "recommended_priorities": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "gap_report": {"type": "string"},
+    },
+}
+
+
+IMAGE_CONCEPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "concepts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "concept_description": {"type": "string"},
+                    "source": {"type": "string"},
+                    "scroll_stop_score": {"type": "integer"},
+                    "native_feed_score": {"type": "integer"},
+                    "emotional_trigger": {"type": "string"},
+                    "copy_alignment": {"type": "string"},
+                    "format": {"type": "string"},
+                    "production_method": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
+IMAGE_PROMPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "prompts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "concept_ref": {"type": "string"},
+                    "prompt_text": {"type": "string"},
+                    "tool": {"type": "string"},
+                    "style_notes": {"type": "string"},
+                    "format": {"type": "string"},
+                    "native_enforcement": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
 REFLECTION_SCHEMA = {
     "type": "object",
     "properties": {
