@@ -116,3 +116,91 @@ async def delete_corpus_entry(slug: str) -> None:
     deleted = corpus_store.delete(slug)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corpus entry '{slug}' not found")
+
+
+# ── Training Corpus Export ─────────────────────────────────────────
+
+
+class ExportResponse(BaseModel):
+    format: str
+    sections: int
+    chars: int
+    path: str | None = None
+
+
+@router.get("/export/markdown")
+async def export_corpus_markdown() -> dict:
+    """Export the full training corpus as structured markdown.
+
+    Returns the complete creative strategy knowledge base as a single
+    markdown document, structured for both human reading and ML training.
+    """
+    from app.knowledge.synthesizer import export_markdown
+    md_text = export_markdown()
+    return {
+        "format": "markdown",
+        "content": md_text,
+        "chars": len(md_text),
+    }
+
+
+@router.post("/export/markdown/file", response_model=ExportResponse)
+async def export_corpus_markdown_file() -> ExportResponse:
+    """Export the full training corpus to docs/training_corpus.md."""
+    from app.knowledge.synthesizer import export_markdown
+    md_text = export_markdown(output_path="docs/training_corpus.md")
+    return ExportResponse(
+        format="markdown",
+        sections=md_text.count("####"),
+        chars=len(md_text),
+        path="docs/training_corpus.md",
+    )
+
+
+@router.get("/export/training-pairs")
+async def export_training_pairs_endpoint() -> dict:
+    """Export corpus as (instruction, response) training pairs.
+
+    Returns JSONL-compatible training pairs for fine-tuning.
+    Includes DPO pairs (chosen/rejected) where good/bad examples exist.
+    """
+    from app.knowledge.synthesizer import export_training_pairs
+    pairs = export_training_pairs()
+    return {
+        "format": "training_pairs",
+        "count": len(pairs),
+        "dpo_pairs": sum(1 for p in pairs if p.get("type") == "dpo_pair"),
+        "pairs": pairs,
+    }
+
+
+@router.post("/export/training-pairs/file", response_model=ExportResponse)
+async def export_training_pairs_file() -> ExportResponse:
+    """Export training pairs to docs/training_pairs.jsonl."""
+    from app.knowledge.synthesizer import export_training_pairs
+    pairs = export_training_pairs(output_path="docs/training_pairs.jsonl")
+    return ExportResponse(
+        format="jsonl",
+        sections=len(pairs),
+        chars=0,
+        path="docs/training_pairs.jsonl",
+    )
+
+
+@router.post("/export/system-prompts/files", response_model=ExportResponse)
+async def export_system_prompt_fragments() -> ExportResponse:
+    """Export domain-specific system prompt fragments to docs/prompts/.
+
+    Each domain gets its own markdown file that can be used as a
+    system prompt for custom GPTs, Claude Projects, or any system
+    that needs domain expertise.
+    """
+    from app.knowledge.synthesizer import export_system_prompt_fragments
+    fragments = export_system_prompt_fragments(output_path="docs/prompts")
+    total_chars = sum(len(v) for v in fragments.values())
+    return ExportResponse(
+        format="system_prompt_fragments",
+        sections=len(fragments),
+        chars=total_chars,
+        path="docs/prompts/",
+    )
