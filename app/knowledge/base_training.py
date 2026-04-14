@@ -502,8 +502,15 @@ GOOD (structured gap analysis across all three levels):
 """
 
 
-def get_training_context(include_examples: bool = True) -> str:
+def get_training_context(
+    include_examples: bool = True,
+    include_corpus: bool = True,
+    corpus_budget: int = 50_000,
+) -> str:
     """Assemble the full training context for injection into worker prompts.
+
+    Combines built-in corpus (principles, frameworks, examples) with
+    user-ingested corpus files from app/knowledge/corpus/.
 
     This gets cached via prompt caching so it's essentially free
     after the first call per worker.
@@ -511,4 +518,15 @@ def get_training_context(include_examples: bool = True) -> str:
     parts = [CREATIVE_STRATEGY_PRINCIPLES, REASONING_FRAMEWORKS]
     if include_examples:
         parts.append(FEW_SHOT_EXAMPLES)
+
+    # Load user-ingested corpus if available
+    if include_corpus:
+        try:
+            from app.knowledge.doc_ingest.store import corpus_store
+            corpus_context = corpus_store.load_all_for_context(max_chars=corpus_budget)
+            if corpus_context:
+                parts.append(corpus_context)
+        except Exception:
+            pass  # Corpus loading is best-effort — don't break workers
+
     return "\n\n---\n\n".join(parts)
