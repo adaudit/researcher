@@ -30,6 +30,8 @@ class BankType(str, Enum):
     VOC = "voc"
     RESEARCH = "research"
     REFLECTION = "reflections"
+    SEEDS = "seeds"
+    PRIMERS = "primers"
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,16 @@ BANK_SPECS: dict[BankType, BankSpec] = {
         BankType.REFLECTION,
         "Durable lessons, shifts, emerging rules, and pattern summaries",
         "mental_model",
+    ),
+    BankType.SEEDS: BankSpec(
+        BankType.SEEDS,
+        "Ideation seeds with source metadata (swipe/organic/research/template/internal/gambit)",
+        "experience",
+    ),
+    BankType.PRIMERS: BankSpec(
+        BankType.PRIMERS,
+        "Living primer docs (ad, hook, headline) per offer",
+        "world_fact",
     ),
 }
 
@@ -144,6 +156,7 @@ def recall_scope_for_worker(worker_name: str, account_id: str, offer_id: str | N
     Enforces narrow recall scopes per the blueprint.
     """
     scope_map: dict[str, list[BankType]] = {
+        # Analysis workers
         "offer_intelligence": [BankType.CORE, BankType.OFFER],
         "creative_ingest": [BankType.CREATIVE],
         "landing_page_analyzer": [BankType.LANDING_PAGE, BankType.OFFER],
@@ -154,10 +167,23 @@ def recall_scope_for_worker(worker_name: str, account_id: str, offer_id: str | N
         "audience_psychology": [BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.REFLECTION],
         "proof_inventory": [BankType.OFFER, BankType.LANDING_PAGE, BankType.RESEARCH],
         "differentiation": [BankType.OFFER, BankType.CREATIVE, BankType.RESEARCH],
+        # Ideation workers
         "hook_engineer": [BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.REFLECTION],
-        "brief_composer": [BankType.OFFER, BankType.CREATIVE, BankType.REFLECTION],
+        "brief_composer": [BankType.OFFER, BankType.CREATIVE, BankType.REFLECTION, BankType.SEEDS],
+        "organic_discovery": [BankType.OFFER, BankType.SEEDS],
+        "swipe_miner": [BankType.CREATIVE, BankType.SEEDS],
+        "coverage_matrix": [BankType.SEEDS, BankType.CREATIVE, BankType.OFFER, BankType.REFLECTION],
+        # Writing workers
+        "copy_generator": [BankType.OFFER, BankType.CREATIVE, BankType.VOC, BankType.PRIMERS],
+        "hook_generator": [BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.PRIMERS],
+        "headline_generator": [BankType.OFFER, BankType.CREATIVE, BankType.PRIMERS],
         "copy_shape_police": [BankType.OFFER, BankType.CREATIVE],
         "compression_tax": [BankType.OFFER],
+        # Creative workers
+        "image_concept_generator": [BankType.CREATIVE, BankType.VOC, BankType.OFFER],
+        "image_prompt_generator": [BankType.CREATIVE],
+        "creative_loopback": [BankType.CREATIVE, BankType.SEEDS],
+        # Iteration workers
         "iteration_planner": [BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.LANDING_PAGE, BankType.RESEARCH, BankType.REFLECTION],
         "memory_reflection": [BankType.OFFER, BankType.CREATIVE, BankType.VOC, BankType.LANDING_PAGE, BankType.RESEARCH],
     }
