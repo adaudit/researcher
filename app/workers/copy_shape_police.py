@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import COPY_SHAPE_POLICE_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import COPY_REVIEW_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -63,14 +64,15 @@ class CopyShapePoliceWorker(BaseWorker):
             f"- {m.get('content', '')}" for m in strategy_context
         ) if strategy_context else "No strategy context available."
 
-        analysis = await llm_client.generate(
-            system_prompt=COPY_SHAPE_POLICE_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.COPY_ANALYSIS,
+            system_prompt=f"{COPY_SHAPE_POLICE_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Review this draft copy for generic language, LLM-isms, and strategic gaps.\n\n"
                 f"AVAILABLE STRATEGY CONTEXT (use for rewrite directions):\n{strategy_text}\n\n"
                 f"DRAFT COPY:\n{draft_text}"
             ),
-            tier=ModelTier.STANDARD,
             temperature=0.2,
             max_tokens=5000,
             json_schema=COPY_REVIEW_SCHEMA,

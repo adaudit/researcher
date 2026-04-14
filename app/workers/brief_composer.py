@@ -14,7 +14,8 @@ from typing import Any
 from app.prompts.systems import BRIEF_COMPOSER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import BRIEF_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -69,8 +70,10 @@ class BriefComposerWorker(BaseWorker):
         seeds = params.get("seeds", [])
         seed_text = json.dumps(seeds, indent=1, default=str) if seeds else "No specific seeds — generate from evidence."
 
-        analysis = await llm_client.generate(
-            system_prompt=BRIEF_COMPOSER_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.CREATIVE_GENERATION,
+            system_prompt=f"{BRIEF_COMPOSER_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Compose strategic briefs using the following inputs.\n\n"
                 f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n\n"
@@ -79,7 +82,6 @@ class BriefComposerWorker(BaseWorker):
                 f"Create 3-5 briefs targeting different awareness levels. "
                 f"Each MUST have a mechanism bridge and anti-generic rules."
             ),
-            tier=ModelTier.ADVANCED,
             temperature=0.4,
             max_tokens=8000,
             json_schema=BRIEF_SCHEMA,

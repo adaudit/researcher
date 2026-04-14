@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import COMPRESSION_TAX_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import COMPRESSION_TAX_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -68,15 +69,16 @@ class CompressionTaxWorker(BaseWorker):
 
         original_word_count = len(draft_text.split())
 
-        analysis = await llm_client.generate(
-            system_prompt=COMPRESSION_TAX_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.COPY_ANALYSIS,
+            system_prompt=f"{COMPRESSION_TAX_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Apply the compression tax to this draft ({original_word_count} words). "
                 f"Target: cut 5-10% of non-offer text.\n\n"
                 f"OFFER CONTEXT (what must be preserved):\n{context_text}\n\n"
                 f"DRAFT:\n{draft_text}"
             ),
-            tier=ModelTier.STANDARD,
             temperature=0.1,
             max_tokens=8000,
             json_schema=COMPRESSION_TAX_SCHEMA,

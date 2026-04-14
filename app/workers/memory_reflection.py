@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import MEMORY_REFLECTION_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker, trigger_reflection
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import REFLECTION_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -70,9 +71,11 @@ class MemoryReflectionWorker(BaseWorker):
             for m in memories
         )
 
-        # LLM reflection — ADVANCED tier for highest-quality strategic reasoning
-        analysis = await llm_client.generate(
-            system_prompt=MEMORY_REFLECTION_SYSTEM,
+        # LLM reflection — using router for highest-quality strategic reasoning
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.REFLECTION,
+            system_prompt=f"{MEMORY_REFLECTION_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Reflect on these {len(memories)} evidence items. "
                 f"Identify durable lessons, emerging patterns, and strategic shifts.\n\n"
@@ -80,7 +83,6 @@ class MemoryReflectionWorker(BaseWorker):
                 f"INDEPENDENT sources. Include a falsifiable prediction for each lesson.\n\n"
                 f"EVIDENCE:\n{evidence_text}"
             ),
-            tier=ModelTier.ADVANCED,
             temperature=0.3,
             max_tokens=6000,
             json_schema=REFLECTION_SCHEMA,

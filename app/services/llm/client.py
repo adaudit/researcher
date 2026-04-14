@@ -1,11 +1,24 @@
 """LLM client with prompt caching, model routing, and structured output.
 
+DEPRECATED: Use app.services.llm.router instead.
+This module is kept for backwards compatibility with tests. All workers
+have been migrated to the multi-model router (app.services.llm.router)
+which supports Anthropic, Google, and OpenAI with capability-based routing.
+
 Uses the Anthropic SDK with prompt caching to minimize cost and latency.
 Model routing sends extraction tasks to Haiku, synthesis to Sonnet,
 and high-stakes strategic reasoning to Opus.
 
 Every call returns structured JSON — no free-form prose parsing.
 """
+
+import warnings
+
+warnings.warn(
+    "app.services.llm.client is deprecated. Use app.services.llm.router instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from __future__ import annotations
 

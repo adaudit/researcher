@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import PROOF_INVENTORY_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import PROOF_INVENTORY_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -55,14 +56,15 @@ class ProofInventoryWorker(BaseWorker):
             for m in memories
         )
 
-        analysis = await llm_client.generate(
-            system_prompt=PROOF_INVENTORY_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.SYNTHESIS,
+            system_prompt=f"{PROOF_INVENTORY_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Build the complete proof hierarchy from these {len(memories)} evidence items.\n\n"
                 f"Rank each proof element by type and strength. Identify all gaps.\n\n"
                 f"EVIDENCE:\n{evidence_text}"
             ),
-            tier=ModelTier.STANDARD,
             temperature=0.2,
             max_tokens=6000,
             json_schema=PROOF_INVENTORY_SCHEMA,

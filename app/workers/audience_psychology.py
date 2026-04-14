@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import AUDIENCE_PSYCHOLOGY_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import DESIRE_MAP_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -65,16 +66,17 @@ class AudiencePsychologyWorker(BaseWorker):
             for m in memories
         )
 
-        # LLM synthesis — ADVANCED tier for deep psychological mapping
-        analysis = await llm_client.generate(
-            system_prompt=AUDIENCE_PSYCHOLOGY_SYSTEM,
+        # LLM synthesis — STRATEGIC_REASONING for deep psychological mapping
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.STRATEGIC_REASONING,
+            system_prompt=f"{AUDIENCE_PSYCHOLOGY_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Based on the following {len(memories)} pieces of evidence, "
                 f"build a complete audience desire map.\n\n"
                 f"Do NOT exceed the evidence. If a category has no evidence, say so.\n\n"
                 f"EVIDENCE:\n{evidence_text}"
             ),
-            tier=ModelTier.ADVANCED,
             temperature=0.3,
             max_tokens=6000,
             json_schema=DESIRE_MAP_SCHEMA,

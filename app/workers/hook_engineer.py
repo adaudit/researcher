@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import HOOK_ENGINEER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import HOOK_TERRITORY_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -71,8 +72,10 @@ class HookEngineerWorker(BaseWorker):
         if diff_map:
             upstream_context += f"\nDIFFERENTIATION MAP:\n{_format_dict(diff_map)}\n"
 
-        analysis = await llm_client.generate(
-            system_prompt=HOOK_ENGINEER_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.CREATIVE_GENERATION,
+            system_prompt=f"{HOOK_ENGINEER_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Design hook territories for this offer based on the evidence below.\n\n"
                 f"Create hooks for ALL 5 awareness levels. "
@@ -80,7 +83,6 @@ class HookEngineerWorker(BaseWorker):
                 f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n"
                 f"{upstream_context}"
             ),
-            tier=ModelTier.ADVANCED,
             temperature=0.5,  # Higher for creative output
             max_tokens=6000,
             json_schema=HOOK_TERRITORY_SCHEMA,

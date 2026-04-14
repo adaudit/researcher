@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import OFFER_INTELLIGENCE_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import retain_observation
-from app.services.llm.client import LLMClient, ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import OFFER_ANALYSIS_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -57,14 +58,15 @@ class OfferIntelligenceWorker(BaseWorker):
 
         offer_context = "\n\n".join(context_parts) if context_parts else str(params)
 
-        # LLM analysis — use STANDARD tier for thorough offer decomposition
-        analysis = await llm_client.generate(
-            system_prompt=OFFER_INTELLIGENCE_SYSTEM,
+        # LLM analysis — router selects best model for text extraction
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.TEXT_EXTRACTION,
+            system_prompt=f"{OFFER_INTELLIGENCE_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Analyze the following offer and decompose it into its strategic components.\n\n"
                 f"OFFER DATA:\n{offer_context}"
             ),
-            tier=ModelTier.STANDARD,
             temperature=0.2,
             json_schema=OFFER_ANALYSIS_SCHEMA,
         )

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     META_AD_LIBRARY_ACCESS_TOKEN: str = ""
     NCBI_API_KEY: str = ""
 
+    # Acquisition — ScrapCreators (social platform data)
+    SCRAPECREATORS_API_KEY: str = ""
+    SCRAPECREATORS_BASE_URL: str = "https://api.scrapecreators.com/v1"
+
     # Auth
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     JWT_ALGORITHM: str = "HS256"

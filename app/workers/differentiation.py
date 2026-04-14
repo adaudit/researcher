@@ -13,7 +13,8 @@ from typing import Any
 from app.prompts.systems import DIFFERENTIATION_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
-from app.services.llm.client import ModelTier, llm_client
+from app.knowledge.base_training import get_training_context
+from app.services.llm.router import Capability, router
 from app.services.llm.schemas import DIFFERENTIATION_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
 
@@ -55,15 +56,16 @@ class DifferentiationWorker(BaseWorker):
             for m in memories
         )
 
-        analysis = await llm_client.generate(
-            system_prompt=DIFFERENTIATION_SYSTEM,
+        training_context = get_training_context()
+        analysis = await router.generate(
+            capability=Capability.STRATEGIC_REASONING,
+            system_prompt=f"{DIFFERENTIATION_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Analyze this offer's differentiation based on {len(memories)} evidence items.\n\n"
                 f"Start with what's the SAME as everything else. "
                 f"Then find genuine contrasts and build consequence framing.\n\n"
                 f"EVIDENCE:\n{evidence_text}"
             ),
-            tier=ModelTier.ADVANCED,
             temperature=0.3,
             max_tokens=5000,
             json_schema=DIFFERENTIATION_SCHEMA,

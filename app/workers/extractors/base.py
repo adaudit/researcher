@@ -35,6 +35,10 @@ class SourcePlatform(str, Enum):
     EMAIL = "email"
     GOOGLE_ADS = "google_ads"
     TWITTER_X = "twitter_x"
+    INSTAGRAM = "instagram"
+    FACEBOOK = "facebook"
+    LINKEDIN = "linkedin"
+    THREADS = "threads"
     TRUSTPILOT = "trustpilot"
     APP_STORE = "app_store"
     GENERIC_COMMENTS = "generic_comments"
@@ -115,6 +119,29 @@ class BaseExtractor(ABC):
         logger.info("extractor.start platform=%s", self.platform.value)
         try:
             result = await self.extract(raw_data, **kwargs)
+
+            # Auto-capture training data if the extractor stashed an LLM trace
+            llm_trace = result.metadata.get("_llm_trace")
+            if llm_trace:
+                try:
+                    from app.workers.base import _get_training_collector
+                    collector = _get_training_collector()
+                    collector.capture(
+                        worker_name=f"extractor_{self.platform.value}",
+                        capability=llm_trace.get("capability", "extraction"),
+                        provider=llm_trace.get("provider", "unknown"),
+                        model=llm_trace.get("model", "unknown"),
+                        system_prompt=llm_trace.get("system_prompt", ""),
+                        user_prompt=llm_trace.get("user_prompt", ""),
+                        response=llm_trace.get("response", ""),
+                        quality_score=llm_trace.get("quality_score", 0),
+                        account_id=kwargs.get("account_id", ""),
+                        offer_id=kwargs.get("offer_id"),
+                        tags=[f"extractor_{self.platform.value}"],
+                    )
+                except Exception:
+                    logger.debug("training.capture_failed extractor=%s", self.platform.value)
+
             logger.info(
                 "extractor.complete platform=%s extracted=%d skipped=%d",
                 self.platform.value,

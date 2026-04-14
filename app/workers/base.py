@@ -32,6 +32,17 @@ from app.services.hindsight.banks import BankType
 
 logger = logging.getLogger(__name__)
 
+# Lazy-init training collector to avoid import cycles
+_training_collector = None
+
+
+def _get_training_collector():
+    global _training_collector
+    if _training_collector is None:
+        from app.knowledge.training_data.collector import TrainingDataCollector
+        _training_collector = TrainingDataCollector()
+    return _training_collector
+
 
 @dataclass
 class WorkerInput:
@@ -101,7 +112,7 @@ class BaseWorker(ABC):
         return output
 
     async def run(self, worker_input: WorkerInput) -> WorkerOutput:
-        """Full execution pipeline: execute -> validate -> log."""
+        """Full execution pipeline: execute -> validate -> capture training data -> log."""
         logger.info(
             "worker.start name=%s account=%s offer=%s",
             self.contract.skill_name,
@@ -118,6 +129,27 @@ class BaseWorker(ABC):
                 success=False,
                 errors=[str(exc)],
             )
+
+        # Auto-capture training data if the worker stashed an LLM trace
+        llm_trace = output.data.get("_llm_trace")
+        if llm_trace and output.success:
+            try:
+                collector = _get_training_collector()
+                collector.capture(
+                    worker_name=self.contract.skill_name,
+                    capability=llm_trace.get("capability", "unknown"),
+                    provider=llm_trace.get("provider", "unknown"),
+                    model=llm_trace.get("model", "unknown"),
+                    system_prompt=llm_trace.get("system_prompt", ""),
+                    user_prompt=llm_trace.get("user_prompt", ""),
+                    response=llm_trace.get("response", ""),
+                    quality_score=llm_trace.get("quality_score", 0),
+                    account_id=worker_input.account_id,
+                    offer_id=worker_input.offer_id,
+                    tags=[self.contract.skill_name],
+                )
+            except Exception:
+                logger.debug("training.capture_failed name=%s", self.contract.skill_name)
 
         logger.info(
             "worker.complete name=%s success=%s observations=%d warnings=%d",
