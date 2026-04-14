@@ -48,66 +48,85 @@ class Provider(str, Enum):
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
     OPENAI = "openai"
+    ZAI = "zai"      # Z.ai GLM-5.1 — OpenAI-compatible API
+    LOCAL = "local"   # Ollama/vLLM — Gemma 4, Llama, etc.
 
 
 # ── Capability → Provider routing table ─────────────────────────────
-# Best provider for each capability based on benchmarks and strengths.
-# Falls back through the list if a provider is unavailable.
+#
+# Cost tiers (per million tokens, input/output):
+#
+#   TIER 0  LOCAL (Gemma 4 26B via Ollama)        $0 / $0
+#   TIER 1  Gemini Flash                          $0.15 / $0.60
+#   TIER 2  GLM-5.1 (Z.ai API)                   $0.95 / $3.15
+#   TIER 3  Sonnet                                $3.00 / $15.00
+#   TIER 4  Opus                                  $15.00 / $75.00
+#
+# Strategy:
+#   - Opus ONLY for copy/hook/headline/brief generation (writing IS the product)
+#   - GLM-5.1 for all reasoning/analysis (16x cheaper than Opus, #1 SWE-Bench)
+#   - Gemma 4 locally for extraction/classification ($0 marginal cost)
+#   - Gemini Flash for multimodal + long docs (cheapest with 1M context)
+#
+# Each list is a fallback chain — first available provider wins.
 
 CAPABILITY_ROUTING: dict[Capability, list[tuple[Provider, str]]] = {
-    # Claude excels at nuanced reasoning and writing analysis
-    Capability.STRATEGIC_REASONING: [
+    # ── Opus — ONLY writing that IS the product ─────────────────────
+    Capability.CREATIVE_GENERATION: [
         (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.ZAI, "glm-5.1"),
         (Provider.GOOGLE, "gemini-2.5-pro"),
-        (Provider.OPENAI, "o3"),
     ],
-    Capability.COPY_ANALYSIS: [
+
+    # ── GLM-5.1 — analysis/reasoning at $0.95/M (was Opus at $15/M) ─
+    Capability.STRATEGIC_REASONING: [
+        (Provider.ZAI, "glm-5.1"),
         (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-        (Provider.OPENAI, "gpt-4.1"),
-        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.GOOGLE, "gemini-2.5-pro"),
     ],
     Capability.SYNTHESIS: [
-        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.ZAI, "glm-5.1"),
+        (Provider.ANTHROPIC, "claude-sonnet-4-6"),
         (Provider.GOOGLE, "gemini-2.5-pro"),
     ],
     Capability.REFLECTION: [
-        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.ZAI, "glm-5.1"),
+        (Provider.ANTHROPIC, "claude-sonnet-4-6"),
         (Provider.GOOGLE, "gemini-2.5-pro"),
     ],
 
-    # Gemini excels at multimodal: video, images, long documents
-    Capability.VIDEO_ANALYSIS: [
-        (Provider.GOOGLE, "gemini-2.5-pro"),
-        (Provider.OPENAI, "gpt-4.1"),
-        (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-    ],
-    Capability.IMAGE_ANALYSIS: [
-        (Provider.GOOGLE, "gemini-2.5-pro"),
-        (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-        (Provider.OPENAI, "gpt-4.1"),
-    ],
-    Capability.LONG_DOCUMENT: [
-        (Provider.GOOGLE, "gemini-2.5-flash"),    # 1M context
-        (Provider.ANTHROPIC, "claude-sonnet-4-6"),  # 200K context
-    ],
-
-    # Fast extraction — price-optimized
-    Capability.TEXT_EXTRACTION: [
-        (Provider.ANTHROPIC, "claude-haiku-4-5-20251001"),
+    # ── Gemma 4 local → Flash fallback — copy review is mechanical ──
+    Capability.COPY_ANALYSIS: [
+        (Provider.LOCAL, ""),
         (Provider.GOOGLE, "gemini-2.5-flash"),
-        (Provider.OPENAI, "gpt-4.1-mini"),
+        (Provider.ZAI, "glm-5.1"),
+    ],
+
+    # ── Gemma 4 local → Flash fallback — extraction is mechanical ───
+    Capability.TEXT_EXTRACTION: [
+        (Provider.LOCAL, ""),
+        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.ZAI, "glm-5.1"),
     ],
     Capability.CLASSIFICATION: [
-        (Provider.ANTHROPIC, "claude-haiku-4-5-20251001"),
+        (Provider.LOCAL, ""),
         (Provider.GOOGLE, "gemini-2.5-flash"),
-        (Provider.OPENAI, "gpt-4.1-mini"),
+        (Provider.ZAI, "glm-5.1"),
     ],
 
-    # Creative generation — benefits from higher temperature + strong writing
-    Capability.CREATIVE_GENERATION: [
-        (Provider.ANTHROPIC, "claude-opus-4-6"),
+    # ── Gemini Flash — multimodal + long context (cheapest option) ──
+    Capability.VIDEO_ANALYSIS: [
+        (Provider.GOOGLE, "gemini-2.5-flash"),
         (Provider.GOOGLE, "gemini-2.5-pro"),
-        (Provider.OPENAI, "o3"),
+    ],
+    Capability.IMAGE_ANALYSIS: [
+        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.ZAI, "glm-5.1"),
+    ],
+    Capability.LONG_DOCUMENT: [
+        (Provider.GOOGLE, "gemini-2.5-flash"),     # 1M context, nearly free
+        (Provider.ZAI, "glm-5.1"),                 # 200K context
+        (Provider.ANTHROPIC, "claude-sonnet-4-6"),  # 200K context
     ],
 }
 
@@ -154,6 +173,36 @@ class ModelRouter:
             except ImportError:
                 logger.warning("router.openai_sdk_missing")
 
+        # Z.ai (GLM-5.1 — OpenAI-compatible API, cheap high-quality reasoning)
+        if settings.ZAI_API_KEY:
+            try:
+                import openai
+                self._providers[Provider.ZAI] = openai.AsyncOpenAI(
+                    base_url=settings.ZAI_BASE_URL,
+                    api_key=settings.ZAI_API_KEY,
+                )
+                logger.info(
+                    "router.provider_ready provider=zai model=%s",
+                    settings.ZAI_MODEL,
+                )
+            except ImportError:
+                logger.warning("router.zai_needs_openai_sdk")
+
+        # Local LLM (Ollama, vLLM — OpenAI-compatible API)
+        if settings.LOCAL_LLM_BASE_URL and settings.LOCAL_LLM_MODEL:
+            try:
+                import openai
+                self._providers[Provider.LOCAL] = openai.AsyncOpenAI(
+                    base_url=settings.LOCAL_LLM_BASE_URL,
+                    api_key="local",  # Most local servers don't need a real key
+                )
+                logger.info(
+                    "router.provider_ready provider=local model=%s url=%s",
+                    settings.LOCAL_LLM_MODEL, settings.LOCAL_LLM_BASE_URL,
+                )
+            except ImportError:
+                logger.warning("router.local_needs_openai_sdk")
+
         if not self._providers:
             logger.error("router.no_providers_available — at least one API key required")
 
@@ -162,16 +211,25 @@ class ModelRouter:
         routes = CAPABILITY_ROUTING.get(capability, [])
         for provider, model in routes:
             if provider in self._providers:
+                # LOCAL and ZAI use model from config, not routing table
+                if provider == Provider.LOCAL:
+                    model = settings.LOCAL_LLM_MODEL
+                elif provider == Provider.ZAI:
+                    model = model or settings.ZAI_MODEL
                 return provider, model
 
         # Fallback: use any available provider with a reasonable model
         for provider in self._providers:
+            if provider == Provider.ZAI:
+                return provider, settings.ZAI_MODEL
             if provider == Provider.ANTHROPIC:
                 return provider, "claude-sonnet-4-6"
             if provider == Provider.GOOGLE:
                 return provider, "gemini-2.5-flash"
             if provider == Provider.OPENAI:
                 return provider, "gpt-4.1-mini"
+            if provider == Provider.LOCAL:
+                return provider, settings.LOCAL_LLM_MODEL
 
         raise RuntimeError("No LLM providers available")
 
@@ -229,6 +287,16 @@ class ModelRouter:
             return await self._generate_openai(
                 model, system_prompt, user_prompt, temperature, max_tokens,
                 images,
+            )
+        elif provider == Provider.ZAI:
+            return await self._generate_openai_compat(
+                Provider.ZAI, model, system_prompt, user_prompt,
+                temperature, max_tokens,
+            )
+        elif provider == Provider.LOCAL:
+            return await self._generate_openai_compat(
+                Provider.LOCAL, model, system_prompt, user_prompt,
+                temperature, max_tokens,
             )
 
         raise ValueError(f"Unknown provider: {provider}")
@@ -365,6 +433,39 @@ class ModelRouter:
         logger.info(
             "openai.usage model=%s input=%d output=%d",
             model, usage.prompt_tokens, usage.completion_tokens,
+        )
+
+        return _parse_json(response.choices[0].message.content)
+
+
+    async def _generate_openai_compat(
+        self, provider: Provider, model: str, system: str, user: str,
+        temperature: float, max_tokens: int,
+    ) -> dict[str, Any]:
+        """Generate via any OpenAI-compatible API (Z.ai GLM-5.1, Ollama, vLLM).
+
+        Both ZAI and LOCAL providers use the OpenAI SDK under the hood,
+        just pointed at different base_url endpoints.
+        """
+        client = self._providers[provider]
+
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+
+        usage = response.usage
+        logger.info(
+            "%s.usage model=%s input=%d output=%d",
+            provider.value, model,
+            usage.prompt_tokens if usage else 0,
+            usage.completion_tokens if usage else 0,
         )
 
         return _parse_json(response.choices[0].message.content)

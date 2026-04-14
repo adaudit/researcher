@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     META_AD_LIBRARY_ACCESS_TOKEN: str = ""
     NCBI_API_KEY: str = ""
 
+    # Z.ai (GLM-5.1 — cheap high-quality reasoning, OpenAI-compatible API)
+    ZAI_API_KEY: str = ""
+    ZAI_BASE_URL: str = "https://open.z.ai/api/paas/v4"  # OpenAI-compatible
+    ZAI_MODEL: str = "glm-5.1"
+
+    # Local LLM (Ollama, vLLM — any OpenAI-compatible server)
+    LOCAL_LLM_BASE_URL: str = ""  # e.g. "http://localhost:11434/v1" for Ollama
+    LOCAL_LLM_MODEL: str = ""     # e.g. "gemma4:26b", "gemma4:31b", "llama3.3:70b"
+
     # Acquisition — ScrapCreators (social platform data)
     SCRAPECREATORS_API_KEY: str = ""
     SCRAPECREATORS_BASE_URL: str = "https://api.scrapecreators.com/v1"
