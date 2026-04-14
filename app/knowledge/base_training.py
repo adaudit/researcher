@@ -68,7 +68,65 @@ not from assumptions about the audience.
 ### 10. The Consequence Frame
 Differentiation isn't "we're better." It's "because we do X differently,
 the consequence for you is Y." This requires knowing what competitors
-actually do (sameness mapping) before claiming difference.\
+actually do (sameness mapping) before claiming difference.
+
+### 11. Creative Diversity Is the System
+Creative diversity is not just "try different styles." It operates on
+three levels, and all three must be covered to find new winning clusters:
+
+**Level 1 — Segments (Who you're talking to):**
+A segment = Demographics/Identity × Core Pain/Promise × Constraints.
+Constraints are the "but" factor — "I want healthy plants BUT it has
+to be organic." Some segments are broad (scale), some are specific (tails).
+A healthy mix of both is essential.
+
+**Level 2 — Awareness Levels (Where you meet them):**
+Unaware → Problem Aware → Solution Aware → Product Aware → Most Aware.
+Each segment has different awareness levels. 5 segments × 5 levels = 25
+distinct creative buckets. Most accounts only test 3-4.
+
+**Level 3 — CASH (The creative DNA):**
+Concepts, Angles, Styles, and Hooks. Style is only ONE component — most
+people think "creative diversity" means "try UGC and founder-led." That
+misses 75% of the landscape. Messaging diversity (concepts, angles, hooks)
+is what actually prevents clustering.
+
+Think Battleship: spread your shots → find ships → saturate around wins.
+Ecology: a healthy ad account has many species, not all primates.
+Avoid local maximums: if you only test on one peak, you never find
+the higher peaks elsewhere.
+
+### 12. Hook First, Always
+40-60% of writing effort should be on the hook. The hook determines
+whether anyone reads the rest. A mediocre ad with a lethal hook will
+outperform a perfect ad with a generic opener. Hooks must be:
+- Specific (exact numbers, exact language, exact pain)
+- Mechanism-connected (bridges to the product's actual solution)
+- Proof-anchored (something provable, not just a claim)
+- Awareness-matched (unaware hooks ≠ product-aware hooks)
+
+### 13. Primers Are Living Documents
+The three foundational documents for any account:
+- **Ad Primer**: 10-12 winning ads separated by ###
+- **Hook Primer**: 10-12 winning hooks
+- **Headline Primer**: 10-12 winning headlines
+These evolve as the account evolves. Winners from this cycle become
+next cycle's primer material. This is the compounding flywheel.
+
+### 14. The 60/10/10/20 Rule
+Time allocation for creative production:
+- Ideation: 50% (finding ideas is THE highest-leverage activity)
+- Brief: 10% (polishing seeds into the strongest possible ideas)
+- Writing: 10% (should be almost mechanical with good briefs and primers)
+- Creative/Visual: 20% (images and video)
+- Analysis: 10% (reviewing what worked and why)
+Most people spend 50% on writing and wonder why they run out of ideas.
+
+### 15. Net New Is the Leverage
+Everything in the creative process is for NET NEW creatives — brand new
+ad concepts that don't exist in the account. Iterations on winners are
+a different, simpler process. If you can nail net new creative generation,
+everything else becomes trivial. Net new is where the real leverage is.\
 """
 
 
@@ -134,7 +192,73 @@ Every iteration must follow:
 2. What does it mean? (pattern, not isolated observation)
 3. What should change in the creative? (specific section, specific direction)
 4. What outcome proves it worked? (measurable, falsifiable)
-5. What stays the same? (explicit preservation list)\
+5. What stays the same? (explicit preservation list)
+
+### H. The Creative Coverage Matrix
+Evaluate creative diversity using the three-level framework:
+1. Map all active ads to: Segment × Awareness Level × CASH type
+2. Identify clusters (where are you testing the same thing repeatedly?)
+3. Identify gaps (which segments have zero ads? which awareness levels?)
+4. Prioritize: test gaps first, then iterate on proven clusters
+Like Battleship — if all your shots are in one quadrant, you're missing ships.
+
+### I. The STORMING Source Diversity Framework
+When generating ideas, pull from multiple sources to ensure natural diversity:
+- **S**wipes: Competitor ads currently spending money
+- **T**emplates: Proven ad format structures
+- **O**rganic: Viral outliers from social platforms outside paid ads
+- **R**esearch: Books, forums, comments, YouTube — real customer language
+- **M**atrix: Explicit creative diversity audit using the coverage matrix
+- **I**nternal Vectors: Patterns hidden in your own winners
+- **N**ew Styles: Emerging visual and structural formats
+- **G**ambits: Your own creative instincts and guesses
+If you only use 1-2 sources, you cluster. Using a spread naturally creates
+diversity across segments, awareness levels, and messaging types.
+
+### J. The Hook-First Writing Framework
+When generating ad copy from a brief:
+1. Generate 10-20 hooks first (from hook primer + brief)
+2. Push for strength: "make these 10 hooks even stronger"
+3. Pick the best hook(s)
+4. Generate 2-4 full ad copies using winning hook + ad primer + brief
+5. Pick the best copy
+6. Generate 10 headlines using headline primer + finished copy
+7. Pick the best headline
+The hook determines everything. Don't start with body copy.
+
+### K. The Primer-Based Generation Framework
+When writing anything, always ground it in proven winners:
+1. Load the relevant primer (ad/hook/headline)
+2. Use the primer as style and quality calibration
+3. Combine primer patterns with brief-specific direction
+4. Generate multiple options (stochastic — like MidJourney giving 4 images)
+5. Pick the best, not the first
+Primers compound: winners → primers → better output → new winners → better primers.
+
+### L. The Seed Bank Accumulation Framework
+Seeds are raw ideation sparks that accumulate across weeks:
+1. Each ideation cycle generates 50-100 seeds from diverse sources
+2. Seeds are tagged by source type (STORMING letter)
+3. Seeds accumulate in the seed bank — never deleted
+4. Each cycle, review accumulated seeds for emerging patterns
+5. After 12 weeks: 1,200+ seeds to mine, cross-reference, and evolve
+The seed bank is both an AI flywheel (more data → better patterns) and
+an instinct flywheel (reviewing seeds sharpens human pattern recognition).
+
+### M. The SCRAWLS Visual Concept Framework
+For generating scroll-stopping ad images, pull from 7 sources:
+- **S**wipes: Competitor visual formats currently spending money
+- **C**opy-Derived: Literal image concepts from finished ad text
+- **R**eptile Triggers: 13 primal psychological triggers (bizarre, voyeur,
+  suffering, sexual, primal fear, inside joke, old/vintage, victory lap,
+  selfie, uncanny object, ultra-real, gory/visceral, wildcard)
+- **A**udience Language: Customer words turned into visual scenes
+- **W**ild Sourcing: Real images from Reddit, forums, social — not ads
+- **L**oopback: Expand winning image vectors from your own account
+- **S**ource: Your own instinctive visual ideas
+The image does NOT need to logically connect to the product. Disconnected,
+native-looking, "what the fuck am I looking at" images often perform best.
+Format: 1:1 or 4:5 only. Must look native to feed, NOT polished.\
 """
 
 
@@ -260,6 +384,120 @@ GOOD (specific, evidence-backed, falsifiable):
   "constraint": "Must not change the mechanism section or CTA. Maintain health compliance.",
   "expected_effect": "CTR improvement to 2.5%+ by matching the dominant pain language",
   "test_hypothesis": "If we lead with the specific pain ('3am wake-ups') instead of the generic benefit ('better sleep'), CTR will increase because we match the exact language pattern from 30% of VOC data"
+}
+
+### Example 6: Brief Writing (Seed → Brief)
+
+BAD (vague, no direction, no source grounding):
+{
+  "brief": "Write an ad about how the supplement helps with sleep. Use a testimonial angle."
+}
+
+GOOD (specific, source-grounded, creatively open):
+{
+  "brief": "A problem-aware ad that opens with the exact moment of 3am wakefulness — that specific, miserable clarity where you're staring at the ceiling knowing tomorrow is ruined. The emotional core is quiet desperation mixed with resignation ('this is just my life now'). The mechanism bridge: the reason you wake at 3am isn't insomnia — it's a cortisol spike your body can't regulate. This product's adaptogen blend targets the HPA axis, which is the actual system that controls that 3am spike. The tone should feel like a friend who finally figured it out, not a doctor lecturing. Source: VOC cluster '3am wake-ups' (14/47 comments), cortisol study from Journal of Clinical Endocrinology 2024.",
+  "awareness_level": "problem_aware",
+  "segment": "Women 35-55, chronic sleep issues, skeptical of melatonin",
+  "source_material": "Reddit comment: 'I literally lie there from 3am to 5am every single night just waiting for the alarm. I've tried everything.'",
+  "mechanism_bridge": "3am wakeup → cortisol spike → HPA axis dysregulation → adaptogen blend targets HPA",
+  "what_makes_it_interesting": "Nobody in the category is talking about WHY you wake at 3am. Everyone says 'better sleep' — this says 'your cortisol is spiking.'"
+}
+
+### Example 7: Hook Generation
+
+BAD (generic hooks with no specificity):
+[
+  "Discover the secret to better sleep",
+  "This changed my life",
+  "You won't believe what happened"
+]
+
+GOOD (specific, mechanism-connected, proof-anchored):
+[
+  {
+    "hook": "Your cortisol spikes at 3am. Here's what your doctor won't test for.",
+    "type": "problem_aware_medical_curiosity",
+    "proof_anchor": "cortisol_study_2024",
+    "why_it_works": "Exact time (3am) from VOC + medical specificity competitors don't use"
+  },
+  {
+    "hook": "I was the woman who 'tried everything' for sleep. Then I stopped trying to fix my sleep and started fixing my cortisol.",
+    "type": "problem_aware_identity_shift",
+    "proof_anchor": "voc_cluster_tried_everything",
+    "why_it_works": "Identity language ('the woman who') + reframe from symptom to mechanism"
+  },
+  {
+    "hook": "23 lbs lighter. Zero diet changes. My doctor thought I was lying.",
+    "type": "product_aware_outcome",
+    "proof_anchor": "testimonial_23lbs_90days",
+    "why_it_works": "Specific number + no-effort angle + authority surprise (doctor's reaction)"
+  }
+]
+
+### Example 8: Creative Concept (Copy → Image)
+
+BAD (literal product shot):
+{
+  "concept": "Product bottle on a white background",
+  "style": "clean product photography"
+}
+
+GOOD (scroll-stopping, native, emotionally provocative):
+{
+  "concept": "Extreme close-up of bloodshot eyes reflected in a phone screen showing 3:04 AM. The phone brightness illuminates tear-dampened skin. Shot looks like it was taken by the person themselves.",
+  "source": "copy_derived + reptile_trigger_ultra_real",
+  "scroll_stop_score": 9,
+  "native_feed_score": 10,
+  "product_connection": "None directly — the image is the FEELING. The copy does the selling.",
+  "format": "1:1 square",
+  "generation_notes": "Must look like a real iPhone photo, NOT AI-generated. RAW mode, stylization 0."
+}
+
+### Example 9: Seed Evaluation
+
+BAD SEED (too vague to become a brief):
+"Something about how stress affects sleep"
+
+GOOD SEED (specific enough to develop into a brief):
+{
+  "seed": "Silver as a health ingredient — keep seeing it referenced in competitor ads and trending on TikTok health. Nobody in our category is talking about colloidal silver even though 3 competitors are quietly adding it. Could be a new angle cluster.",
+  "source": "internal_vector (pattern in competitor monitoring)",
+  "potential": "high — completely untapped in our messaging",
+  "segment_coverage": "opens solution-aware + unaware angles we don't have",
+  "next_step": "Research silver claims, check regulatory constraints, develop 2-3 brief variations"
+}
+
+### Example 10: Creative Coverage Matrix Gap Report
+
+BAD (no structure, just vibes):
+"We should try more UGC and maybe some different audiences"
+
+GOOD (structured gap analysis across all three levels):
+{
+  "coverage_analysis": {
+    "segment_coverage": {
+      "active": ["Women 35-55 chronic pain", "Men 40-60 joint health"],
+      "untested": ["Athletes 25-40 recovery", "Parents 30-45 energy/fatigue"],
+      "gap_severity": "high — 2 of 4 identified segments have zero ads"
+    },
+    "awareness_coverage": {
+      "over_indexed": "product_aware (60% of ads)",
+      "under_indexed": "unaware (5% of ads), problem_aware (10%)",
+      "gap_severity": "critical — barely reaching top-of-funnel audiences"
+    },
+    "cash_coverage": {
+      "concepts_tested": 8,
+      "angles_tested": 4,
+      "styles_tested": 3,
+      "hooks_tested": 12,
+      "clustering": "Heavy clustering on testimonial concept + UGC style. Zero paradoxical, zero fear-based, zero research-led."
+    }
+  },
+  "recommended_priorities": [
+    "Unaware ads for Athletes 25-40 — completely untapped segment and awareness level",
+    "Problem-aware ads using research/scientific angles — zero in account",
+    "Paradoxical or fear-based hooks — current hooks are 100% promise-based"
+  ]
 }\
 """
 
