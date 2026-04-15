@@ -76,6 +76,19 @@ class HookGeneratorWorker(BaseWorker):
         training_context = get_training_context()
         system_prompt = f"{HOOK_GENERATOR_SYSTEM}\n\n{training_context}{primer_text}"
 
+        # Load account skills if available
+        skills_context = ""
+        try:
+            from app.services.intelligence.skill_manager import SkillDomain, skill_manager
+            skills_context = await skill_manager.get_skills_for_prompt(
+                account_id, [SkillDomain.HOOKS, SkillDomain.AUDIENCE],
+            )
+        except Exception:
+            pass
+
+        if skills_context:
+            system_prompt += f"\n\n{skills_context}"
+
         # Step 1: Generate initial hooks
         result = await router.generate(
             capability=Capability.CREATIVE_GENERATION,
@@ -85,8 +98,7 @@ class HookGeneratorWorker(BaseWorker):
                 f"BRIEF:\n{brief_text}\n\n"
                 f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n\n"
                 f"Cover ALL 5 awareness levels. Every hook needs a proof anchor "
-                f"and mechanism connection. After generating, do a STRENGTH PASS "
-                f"to make each hook more specific and powerful."
+                f"and mechanism connection."
             ),
             temperature=0.7,
             max_tokens=6000,
@@ -100,6 +112,40 @@ class HookGeneratorWorker(BaseWorker):
                 success=False,
                 errors=["Failed to parse LLM response"],
             )
+
+        # Step 2: MULTI-PASS — "push harder" strength pass
+        initial_hooks = result.get("hooks", [])
+        num_passes = params.get("strength_passes", 1)
+
+        if initial_hooks and num_passes > 0:
+            hooks_text = json.dumps(initial_hooks, indent=1, default=str)
+            strength_result = await router.generate(
+                capability=Capability.CREATIVE_GENERATION,
+                system_prompt=system_prompt,
+                user_prompt=(
+                    f"STRENGTH PASS: Take these {len(initial_hooks)} hooks and make each one "
+                    f"MORE SPECIFIC, MORE PROOF-ANCHORED, and MORE EMOTIONALLY PROVOCATIVE.\n\n"
+                    f"For each hook:\n"
+                    f"- Replace vague language with exact numbers, times, or quotes\n"
+                    f"- Make the proof anchor visible in the hook itself\n"
+                    f"- Push the emotional intensity up one level\n"
+                    f"- If it could work for a competitor, rewrite until it can't\n\n"
+                    f"CURRENT HOOKS:\n{hooks_text}\n\n"
+                    f"Return the STRENGTHENED versions plus any new hooks that emerged."
+                ),
+                temperature=0.8,
+                max_tokens=6000,
+                json_schema=HOOK_GENERATION_SCHEMA,
+            )
+
+            if not strength_result.get("_parse_error"):
+                strengthened = strength_result.get("hooks", [])
+                if strengthened:
+                    result["hooks"] = strengthened
+                    result["strength_pass_notes"] = strength_result.get(
+                        "strength_pass_notes",
+                        f"Strengthened {len(initial_hooks)} hooks in {num_passes} pass(es)",
+                    )
 
         # Validate hook quality
         quality_warnings: list[str] = []

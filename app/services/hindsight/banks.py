@@ -32,6 +32,8 @@ class BankType(str, Enum):
     REFLECTION = "reflections"
     SEEDS = "seeds"
     PRIMERS = "primers"
+    SKILLS = "skills"       # Per-account learnable skill files
+    GLOBAL = "global"       # Cross-business aggregated intelligence
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,16 @@ BANK_SPECS: dict[BankType, BankSpec] = {
         BankType.PRIMERS,
         "Living primer docs (ad, hook, headline) per offer",
         "world_fact",
+    ),
+    BankType.SKILLS: BankSpec(
+        BankType.SKILLS,
+        "Per-account learnable skill files — evolving knowledge of what works for this business",
+        "mental_model",
+    ),
+    BankType.GLOBAL: BankSpec(
+        BankType.GLOBAL,
+        "Cross-business aggregated patterns — anonymized learnings from all accounts",
+        "mental_model",
     ),
 }
 
@@ -186,6 +198,9 @@ def recall_scope_for_worker(worker_name: str, account_id: str, offer_id: str | N
         # Iteration workers
         "iteration_planner": [BankType.OFFER, BankType.VOC, BankType.CREATIVE, BankType.LANDING_PAGE, BankType.RESEARCH, BankType.REFLECTION],
         "memory_reflection": [BankType.OFFER, BankType.CREATIVE, BankType.VOC, BankType.LANDING_PAGE, BankType.RESEARCH],
+        # Intelligence workers
+        "ad_analyzer": [BankType.CREATIVE, BankType.OFFER, BankType.SKILLS],
+        "creative_producer": [BankType.OFFER, BankType.CREATIVE, BankType.VOC, BankType.PRIMERS, BankType.SKILLS],
     }
 
     bank_types = scope_map.get(worker_name, [])

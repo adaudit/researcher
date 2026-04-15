@@ -10,6 +10,7 @@ from app.api.v1.research_cycles import router as research_cycles_router
 from app.api.v1.strategy import router as strategy_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.primers import router as primers_router
+from app.api.v1.seeds import router as seeds_router
 from app.api.v1.webhooks import router as webhooks_router
 
 router = APIRouter()
@@ -23,4 +24,5 @@ router.include_router(strategy_router, prefix="/strategy-map", tags=["strategy"]
 router.include_router(iterations_router, prefix="/iteration-headers", tags=["iterations"])
 router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 router.include_router(primers_router, prefix="/primers", tags=["primers"])
+router.include_router(seeds_router, prefix="/seeds", tags=["seeds"])
 router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])

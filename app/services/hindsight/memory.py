@@ -182,5 +182,9 @@ def _bank_type_to_memory_type(bank_type: BankType) -> str:
         BankType.VOC: "experience",
         BankType.RESEARCH: "world_fact",
         BankType.REFLECTION: "mental_model",
+        BankType.SEEDS: "experience",
+        BankType.PRIMERS: "world_fact",
+        BankType.SKILLS: "mental_model",
+        BankType.GLOBAL: "mental_model",
     }
     return mapping.get(bank_type, "world_fact")
