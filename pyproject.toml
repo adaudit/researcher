@@ -30,6 +30,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "tenacity>=9.0.0",
     "scrapling[all]>=0.3.0",
+    "scenedetect[opencv]>=0.6.0",
 ]
 
 [project.optional-dependencies]
