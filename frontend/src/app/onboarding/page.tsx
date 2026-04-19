@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
+import { offers, performance } from "@/lib/api";
 
 const STEPS = [
   { id: "brand", title: "Brand Setup", description: "Tell us about the brand" },
@@ -21,13 +24,117 @@ const INDUSTRIES = [
 ];
 
 export default function OnboardingPage() {
+  const router = useRouter();
+  const token = useAuth((s) => s.token);
+  const workspaceId = useAuth((s) => s.activeWorkspaceId);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [launching, setLaunching] = useState(false);
+  const [error, setError] = useState("");
 
   const current = STEPS[step];
 
   function updateForm(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleLaunch() {
+    if (!token || !workspaceId) return;
+    setLaunching(true);
+    setError("");
+
+    try {
+      // 1. Create the offer
+      const offer = await offers.create(token, workspaceId, {
+        name: form.product || form.brand_name || "New Offer",
+        mechanism: form.mechanism || "",
+        cta: "",
+        price_point: form.price ? parseFloat(form.price) : null,
+        product_url: form.pdp_url || form.website || "",
+        target_audience: form.target_audience || "",
+        regulated_category: form.industry === "supplements" || form.industry === "cbd_wellness" ? "health" : "none",
+      });
+
+      // 2. Upload primers
+      if (form.ad_primer) {
+        await fetch("/api/primers/" + offer.id, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "X-Account-Id": workspaceId,
+          },
+          body: JSON.stringify({ primer_type: "ad_primer", content: form.ad_primer }),
+        });
+      }
+      if (form.hook_primer) {
+        await fetch("/api/primers/" + offer.id, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "X-Account-Id": workspaceId,
+          },
+          body: JSON.stringify({ primer_type: "hook_primer", content: form.hook_primer }),
+        });
+      }
+      if (form.headline_primer) {
+        await fetch("/api/primers/" + offer.id, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "X-Account-Id": workspaceId,
+          },
+          body: JSON.stringify({ primer_type: "headline_primer", content: form.headline_primer }),
+        });
+      }
+
+      // 3. Set winning definition
+      await fetch("/api/performance/winning-definition?offer_id=" + offer.id, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Account-Id": workspaceId,
+        },
+        body: JSON.stringify({
+          primary_metric: "roas",
+          winner_threshold: parseFloat(form.winner_roas || "3.0"),
+          strong_threshold: parseFloat(form.strong_roas || "2.0"),
+          min_spend_for_evaluation: parseFloat(form.min_spend || "50"),
+          attribution_source: form.attribution || "first_party",
+        }),
+      });
+
+      // 4. Trigger onboarding workflow
+      await fetch("/api/research-cycles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Account-Id": workspaceId,
+        },
+        body: JSON.stringify({
+          offer_id: offer.id,
+          workflow_type: "onboarding",
+          payload: {
+            mechanism: form.mechanism,
+            target_audience: form.target_audience,
+            product_url: form.pdp_url,
+            landing_page_url: form.landing_page,
+            competitors: form.competitors?.split("\n").filter(Boolean),
+            founder_notes: form.founder_notes,
+          },
+        }),
+      });
+
+      router.push("/dashboard");
+    } catch (e: any) {
+      setError(e.message || "Failed to launch");
+    } finally {
+      setLaunching(false);
+    }
   }
 
   return (
@@ -100,9 +207,9 @@ export default function OnboardingPage() {
               <textarea
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                 rows={2}
-                placeholder="Competitor ad library links (one per line)"
-                value={form.competitor_links || ""}
-                onChange={(e) => updateForm("competitor_links", e.target.value)}
+                placeholder="Any notes for the AI about this brand (optional)"
+                value={form.founder_notes || ""}
+                onChange={(e) => updateForm("founder_notes", e.target.value)}
               />
             </>
           )}
@@ -178,13 +285,15 @@ export default function OnboardingPage() {
 
           {step === 5 && (
             <div className="space-y-4 text-center">
-              <div className="text-6xl">🚀</div>
               <p className="text-lg font-medium">Ready to launch the first analysis cycle</p>
               <p className="text-sm text-muted-foreground">
                 The system will analyze the offer, decompose the landing page, mine VOC,
                 build proof inventory, map differentiation, engineer hooks, and compose briefs.
               </p>
-              <Button size="lg" className="mt-4">Launch Analysis</Button>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button size="lg" className="mt-4" onClick={handleLaunch} disabled={launching}>
+                {launching ? "Launching..." : "Launch Analysis"}
+              </Button>
             </div>
           )}
 
