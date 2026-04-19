@@ -23,15 +23,23 @@ logger = logging.getLogger(__name__)
 
 class ObjectStore:
     def __init__(self) -> None:
-        self._client = boto3.client(
-            "s3",
-            endpoint_url=settings.S3_ENDPOINT_URL,
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
-            region_name=settings.S3_REGION,
-            config=BotoConfig(signature_version="s3v4"),
-        )
-        self._ensure_buckets()
+        self._client = None
+        self._buckets_ready = False
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = boto3.client(
+                "s3",
+                endpoint_url=settings.S3_ENDPOINT_URL,
+                aws_access_key_id=settings.S3_ACCESS_KEY,
+                aws_secret_access_key=settings.S3_SECRET_KEY,
+                region_name=settings.S3_REGION,
+                config=BotoConfig(signature_version="s3v4"),
+            )
+        if not self._buckets_ready:
+            self._ensure_buckets()
+            self._buckets_ready = True
+        return self._client
 
     def _ensure_buckets(self) -> None:
         for bucket in (settings.S3_BUCKET_ARTIFACTS, settings.S3_BUCKET_MEDIA):
@@ -51,16 +59,12 @@ class ObjectStore:
         content_type: str = "application/octet-stream",
         metadata: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Upload raw artifact to the artifacts bucket.
-
-        Returns storage reference with bucket, key, hash, and size.
-        """
         content_hash = hashlib.sha256(data).hexdigest()
         extra: dict[str, Any] = {"ContentType": content_type}
         if metadata:
             extra["Metadata"] = metadata
 
-        self._client.upload_fileobj(
+        self._get_client().upload_fileobj(
             BytesIO(data),
             settings.S3_BUCKET_ARTIFACTS,
             key,
@@ -82,9 +86,8 @@ class ObjectStore:
         data: bytes,
         content_type: str = "video/mp4",
     ) -> dict[str, Any]:
-        """Upload media file (video, audio) to the media bucket."""
         content_hash = hashlib.sha256(data).hexdigest()
-        self._client.upload_fileobj(
+        self._get_client().upload_fileobj(
             BytesIO(data),
             settings.S3_BUCKET_MEDIA,
             key,
@@ -100,25 +103,24 @@ class ObjectStore:
             "content_type": content_type,
         }
 
-    def download(self, bucket: str, key: str) -> bytes:
-        """Download an object and return raw bytes."""
+    async def download(self, bucket: str, key: str) -> bytes:
         buf = BytesIO()
-        self._client.download_fileobj(bucket, key, buf)
+        self._get_client().download_fileobj(bucket, key, buf)
         buf.seek(0)
         return buf.read()
 
     def get_presigned_url(
         self, bucket: str, key: str, expires_in: int = 3600
     ) -> str:
-        return self._client.generate_presigned_url(
+        return self._get_client().generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": key},
             ExpiresIn=expires_in,
         )
 
     def delete(self, bucket: str, key: str) -> None:
-        self._client.delete_object(Bucket=bucket, Key=key)
+        self._get_client().delete_object(Bucket=bucket, Key=key)
 
 
-# Module-level singleton
+# Module-level singleton — no connection until first use
 object_store = ObjectStore()
