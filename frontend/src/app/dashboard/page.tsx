@@ -1,16 +1,55 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BarChart3, FileImage, Lightbulb, Sparkles, TrendingUp, AlertCircle } from "lucide-react";
+import { BarChart3, FileImage, Lightbulb, Sparkles, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/hooks/use-auth";
+import { performance, creativeLibrary } from "@/lib/api";
 
 export default function DashboardPage() {
+  const token = useAuth((s) => s.token);
+  const workspaceId = useAuth((s) => s.activeWorkspaceId);
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token || !workspaceId) return;
+    loadData();
+  }, [token, workspaceId]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const q = await performance.getQuestions(token!, workspaceId!);
+      setQuestions(q);
+    } catch {
+      // API not available yet — show empty state
+    }
+    setLoading(false);
+  }
+
+  async function handleSyncLearning() {
+    if (!token || !workspaceId) return;
+    try {
+      await performance.syncLearning(token, workspaceId);
+      loadData();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold">Dashboard</h2>
-        <p className="text-muted-foreground">Your creative intelligence overview</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold">Dashboard</h2>
+          <p className="text-muted-foreground">Your creative intelligence overview</p>
+        </div>
+        <Button variant="outline" onClick={handleSyncLearning}>
+          <RefreshCw className="mr-2 h-4 w-4" /> Sync Learning
+        </Button>
       </div>
 
       {/* Quick Stats */}
@@ -18,7 +57,12 @@ export default function DashboardPage() {
         <StatCard title="Active Ads" value="--" icon={FileImage} description="Across all offers" />
         <StatCard title="Winners" value="--" icon={TrendingUp} description="Above ROAS threshold" />
         <StatCard title="Seeds" value="--" icon={Lightbulb} description="In seed bank" />
-        <StatCard title="Pending Questions" value="--" icon={AlertCircle} description="Need your input" />
+        <StatCard
+          title="Pending Questions"
+          value={loading ? "..." : String(questions.length)}
+          icon={AlertCircle}
+          description="Need your input"
+        />
       </div>
 
       {/* Quick Actions */}
@@ -63,11 +107,39 @@ export default function DashboardPage() {
       {/* Pending Questions */}
       <Card>
         <CardHeader>
-          <CardTitle>Questions Needing Your Input</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-yellow-500" />
+            Questions Needing Your Input
+          </CardTitle>
           <CardDescription>The system has questions about your data</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No pending questions</p>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : questions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending questions</p>
+          ) : (
+            <div className="space-y-3">
+              {questions.map((q: any) => (
+                <div key={q.id} className="rounded-lg border p-4">
+                  <p className="text-sm font-medium">{q.question}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="rounded bg-muted px-2 py-0.5 text-xs">{q.question_type}</span>
+                    {q.options && q.options.map((opt: string) => (
+                      <Button key={opt} size="sm" variant="outline" onClick={async () => {
+                        try {
+                          await performance.answerQuestion(token!, workspaceId!, q.id, { answer: opt });
+                          loadData();
+                        } catch {}
+                      }}>
+                        {opt.replace(/_/g, " ")}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

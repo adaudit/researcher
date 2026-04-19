@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.accounts import router as accounts_router
 from app.api.v1.artifacts import router as artifacts_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.costs import router as costs_router
 from app.api.v1.creative_library import router as creative_library_router
 from app.api.v1.iterations import router as iterations_router
 from app.api.v1.landing_pages import router as landing_pages_router
@@ -21,6 +22,7 @@ router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(accounts_router, prefix="/accounts", tags=["accounts"])
 router.include_router(offers_router, prefix="/offers", tags=["offers"])
 router.include_router(artifacts_router, prefix="/artifacts", tags=["artifacts"])
+router.include_router(costs_router, prefix="/costs", tags=["costs"])
 router.include_router(creative_library_router, prefix="/creative-library", tags=["creative-library"])
 router.include_router(research_cycles_router, prefix="/research-cycles", tags=["research-cycles"])
 router.include_router(landing_pages_router, prefix="/landing-page", tags=["landing-page"])
