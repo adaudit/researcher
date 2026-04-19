@@ -43,7 +43,7 @@ class ObservationRecord(Base, TimestampMixin, TenantMixin):
     hindsight_memory_ref: Mapped[str | None] = mapped_column(String(128))
 
     # Extra structured data
-    metadata: Mapped[dict | None] = mapped_column(JSONB)
+    extra_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
 
     def __repr__(self) -> str:
         return f"<Observation id={self.id} category={self.category} status={self.review_status}>"

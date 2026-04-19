@@ -113,7 +113,7 @@ class CreativeAsset(Base, TimestampMixin, TenantMixin):
     )
 
     # Flexible metadata
-    metadata: Mapped[dict | None] = mapped_column(JSONB)
+    extra_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
 
     # Vector embeddings for similarity search
     # content_embedding: text-based (transcript + copy + visual description)

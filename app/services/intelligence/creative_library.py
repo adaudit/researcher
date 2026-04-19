@@ -426,7 +426,7 @@ class CreativeLibrary:
             processing_status="analyzed",
             content_embedding=content_embedding,
             visual_embedding=visual_embedding,
-            metadata={
+            extra_metadata={
                 **(extra_metadata or {}),
                 "auto_categories": categories,
                 "why_it_works": categories.get("why_it_works"),

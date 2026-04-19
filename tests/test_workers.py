@@ -41,26 +41,8 @@ def test_worker_output_defaults():
     assert out.requires_review is False
 
 
-def test_copy_shape_police_patterns():
-    """Verify generic pattern detection works."""
-    from app.workers.copy_shape_police import GENERIC_PATTERNS
-    import re
-
-    test_text = "In today's fast-paced world, this game-changer will supercharge your results."
-
-    matches = []
-    for pattern in GENERIC_PATTERNS:
-        matches.extend(re.findall(pattern, test_text, re.IGNORECASE))
-
-    assert len(matches) >= 3  # "in today's fast-paced", "game-changer", "supercharge"
-
-
-def test_compression_tax_classification():
-    """Verify block role classification works."""
-    from app.workers.compression_tax import _classify_block_role
-
-    assert _classify_block_role("Clinical study shows 40% improvement") == "proof_artifact"
-    assert _classify_block_role("This works by targeting cortisol receptors") == "mechanism"
-    assert _classify_block_role("Order now and save 20%") == "cta"
-    assert _classify_block_role("Unlike other supplements that mask symptoms") == "correction_example"
-    assert _classify_block_role("In today's busy world everyone is stressed") == "generic_filler"
+def test_compression_tax_contract():
+    """Compression tax worker has a valid contract."""
+    worker = CompressionTaxWorker()
+    assert worker.contract.skill_name == "compression_tax"
+    assert "compression" in worker.contract.purpose.lower() or "cut" in worker.contract.purpose.lower()

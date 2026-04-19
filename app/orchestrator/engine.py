@@ -86,8 +86,11 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-# Import autonomous tasks so Celery discovers them
-import app.orchestrator.autonomous  # noqa: F401, E402
+# Register autonomous tasks lazily to avoid circular imports.
+# Celery discovers them when the worker process starts.
+celery_app.conf.update(
+    include=["app.orchestrator.autonomous"],
+)
 
 
 # ── Workflow state machine ──────────────────────────────────────────

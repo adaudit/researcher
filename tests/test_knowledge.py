@@ -115,5 +115,5 @@ def test_synthesizer_training_pairs():
     # Every pair has required fields
     for pair in pairs:
         assert "instruction" in pair
-        assert "output" in pair
+        assert "output" in pair or "chosen" in pair  # standard or DPO pair
         assert "domain" in pair
