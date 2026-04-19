@@ -11,6 +11,7 @@ Tables:
   swipe_entries    — competitor/reference creatives with categorization
 """
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -113,6 +114,12 @@ class CreativeAsset(Base, TimestampMixin, TenantMixin):
 
     # Flexible metadata
     metadata: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Vector embeddings for similarity search
+    # content_embedding: text-based (transcript + copy + visual description)
+    # visual_embedding: image/video-based (TwelveLabs or equivalent)
+    content_embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+    visual_embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
 
     # Relationships
     analysis: Mapped["CreativeAnalysis | None"] = relationship(
