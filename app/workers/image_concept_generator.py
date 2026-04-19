@@ -99,6 +99,26 @@ class ImageConceptGeneratorWorker(BaseWorker):
                 errors=["Failed to parse LLM response"],
             )
 
+        # Multi-pass refinement
+        max_passes = params.get("max_passes", 2)
+        quality_threshold = params.get("quality_threshold", 7.5)
+        if max_passes > 0 and result.get("concepts"):
+            from app.services.intelligence.refinement_engine import refinement_engine
+            refinement = await refinement_engine.refine(
+                task_type="image_concept_generation",
+                initial_output=result,
+                system_prompt=f"{IMAGE_CONCEPT_GENERATOR_SYSTEM}\n\n{training_context}",
+                context=f"AD COPY:\n{ad_copy[:2000]}\n\nEVIDENCE:\n{evidence_text[:3000]}",
+                max_passes=max_passes,
+                threshold=quality_threshold,
+            )
+            result = refinement.final_output
+            result["refinement_metadata"] = {
+                "passes_completed": refinement.passes_completed,
+                "final_score": refinement.final_grade.overall_score,
+                "improved_from_initial": refinement.improved,
+            }
+
         concepts = result.get("concepts", [])
         sources_used = set(c.get("source", "unknown") for c in concepts)
 

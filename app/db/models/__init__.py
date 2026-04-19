@@ -6,6 +6,7 @@ from app.db.models.observation import ObservationRecord
 from app.db.models.offer import Offer
 from app.db.models.skill_component import SkillComponent, SkillComposition
 from app.db.models.strategy_output import StrategyOutput
+from app.db.models.user import User, WorkspaceMembership
 from app.db.models.workflow import WorkflowJob
 
 __all__ = [
@@ -20,5 +21,7 @@ __all__ = [
     "SkillComposition",
     "StrategyOutput",
     "SwipeEntry",
+    "User",
     "WorkflowJob",
+    "WorkspaceMembership",
 ]

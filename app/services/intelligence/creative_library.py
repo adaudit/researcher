@@ -137,6 +137,99 @@ class CreativeLibrary:
 
         return result
 
+    async def find_similar(
+        self,
+        db: AsyncSession,
+        account_id: str,
+        *,
+        reference_asset_id: str | None = None,
+        query_text: str | None = None,
+        embedding_type: str = "content",
+        ownership: str | None = None,
+        performance_tier: str | None = None,
+        limit: int = 10,
+    ) -> list[tuple[CreativeAsset, float]]:
+        """Find creative assets similar to a reference.
+
+        Two modes:
+        1. Reference asset: pass reference_asset_id, find similar to that asset
+        2. Query text: pass query_text, find ads matching that description
+
+        embedding_type: "content" (text-based) or "visual" (image-based)
+
+        Returns list of (asset, distance) tuples sorted by similarity
+        (lower distance = more similar).
+        """
+        from app.services.intelligence.embeddings import embedding_service
+
+        # Get the query vector
+        query_vec = None
+        if reference_asset_id:
+            ref_stmt = select(CreativeAsset).where(
+                CreativeAsset.id == reference_asset_id,
+                CreativeAsset.account_id == account_id,
+            )
+            ref_result = await db.execute(ref_stmt)
+            ref_asset = ref_result.scalar_one_or_none()
+            if ref_asset:
+                query_vec = (
+                    ref_asset.content_embedding if embedding_type == "content"
+                    else ref_asset.visual_embedding
+                )
+        elif query_text:
+            query_vec = await embedding_service.embed_text(query_text)
+
+        if query_vec is None:
+            logger.warning("similarity.no_query_vector")
+            return []
+
+        # Build the query
+        embedding_col = (
+            CreativeAsset.content_embedding if embedding_type == "content"
+            else CreativeAsset.visual_embedding
+        )
+
+        conditions = [
+            CreativeAsset.account_id == account_id,
+            embedding_col.is_not(None),
+        ]
+        if reference_asset_id:
+            conditions.append(CreativeAsset.id != reference_asset_id)
+        if ownership:
+            conditions.append(CreativeAsset.ownership == ownership)
+        if performance_tier:
+            conditions.append(CreativeAsset.performance_tier == performance_tier)
+
+        distance = embedding_col.cosine_distance(query_vec)
+        stmt = (
+            select(CreativeAsset, distance.label("distance"))
+            .where(and_(*conditions))
+            .order_by(distance)
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return [(row[0], float(row[1])) for row in result.all()]
+
+    async def find_similar_winners(
+        self,
+        db: AsyncSession,
+        account_id: str,
+        query_text: str,
+        *,
+        limit: int = 10,
+    ) -> list[tuple[CreativeAsset, float]]:
+        """Find historical winners similar to a task description.
+
+        Useful when creating new work — "find winners similar to what I'm
+        trying to make" for reference and pattern extraction.
+        """
+        return await self.find_similar(
+            db, account_id,
+            query_text=query_text,
+            performance_tier="winner",
+            limit=limit,
+        )
+
     async def search(
         self,
         db: AsyncSession,
@@ -299,6 +392,17 @@ class CreativeLibrary:
             else:
                 perf_tier = "untested"
 
+        # Auto-generate embeddings
+        from app.services.intelligence.embeddings import embedding_service
+        content_embedding = await embedding_service.embed_creative_content(
+            headline=headline,
+            body_copy=body_copy,
+            categories=categories,
+        )
+        visual_embedding = None
+        if image_data:
+            visual_embedding = await embedding_service.embed_visual(image_bytes=image_data)
+
         asset = CreativeAsset(
             id=asset_id,
             account_id=account_id,
@@ -320,6 +424,8 @@ class CreativeLibrary:
             dr_tags=categories.get("dr_tags"),
             performance_tier=perf_tier,
             processing_status="analyzed",
+            content_embedding=content_embedding,
+            visual_embedding=visual_embedding,
             metadata={
                 **(extra_metadata or {}),
                 "auto_categories": categories,

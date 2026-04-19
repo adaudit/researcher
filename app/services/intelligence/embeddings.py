@@ -161,19 +161,21 @@ class EmbeddingService:
     ) -> list[float] | None:
         """Generate visual embedding (1024d) for images/videos.
 
-        Uses Gemini multimodal embedding. For production TwelveLabs
-        Marengo can be substituted here for higher-quality video
-        embeddings.
+        Provider routing:
+          - Video: prefer TwelveLabs Marengo (native video embeddings)
+          - Image: Gemini multimodal embedding (Marengo also supports but Gemini cheaper)
+          - Fallback: Gemini for both
         """
-        google = self._get_google()
-        if not google:
-            return None
+        # Prefer TwelveLabs Marengo for video
+        if video_uri and settings.TWELVELABS_API_KEY:
+            embedding = await self._embed_via_twelvelabs(video_uri=video_uri)
+            if embedding is not None:
+                return embedding
 
-        try:
-            # Note: Gemini multimodal embedding API
-            # For images use model="multimodalembedding@001"
-            # For videos use TwelveLabs Marengo (not implemented here)
-            if image_bytes:
+        # Gemini for images (cheap + good)
+        google = self._get_google()
+        if google and image_bytes:
+            try:
                 from google.genai import types
                 content = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
                 result = await google.aio.models.embed_content(
@@ -187,8 +189,76 @@ class EmbeddingService:
                 elif len(embedding) > VISUAL_EMBEDDING_DIM:
                     embedding = embedding[:VISUAL_EMBEDDING_DIM]
                 return embedding
+            except Exception as exc:
+                logger.warning("embedding.visual_failed error=%s", exc)
+
+        # Last resort: TwelveLabs for images too
+        if image_bytes and settings.TWELVELABS_API_KEY:
+            return await self._embed_via_twelvelabs(image_bytes=image_bytes)
+
+        return None
+
+    async def _embed_via_twelvelabs(
+        self,
+        *,
+        video_uri: str | None = None,
+        image_bytes: bytes | None = None,
+    ) -> list[float] | None:
+        """Generate visual embedding via TwelveLabs Marengo.
+
+        Marengo is video-native and produces 1024d embeddings that
+        unify visual, audio, and transcript content into one space.
+        """
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=settings.TWELVELABS_BASE_URL,
+                headers={"x-api-key": settings.TWELVELABS_API_KEY},
+                timeout=120.0,
+            ) as client:
+                if video_uri:
+                    # Create video embedding task
+                    task_response = await client.post(
+                        "/embed/tasks",
+                        json={
+                            "model_name": settings.TWELVELABS_EMBED_MODEL,
+                            "video_url": video_uri,
+                        },
+                    )
+                    task_response.raise_for_status()
+                    task_id = task_response.json().get("_id")
+
+                    # Poll for completion (simplified — in production use webhooks)
+                    import asyncio
+                    for _ in range(60):  # up to 5 minutes
+                        await asyncio.sleep(5)
+                        status_response = await client.get(f"/embed/tasks/{task_id}")
+                        status_data = status_response.json()
+                        if status_data.get("status") == "ready":
+                            segments = status_data.get("video_embedding", {}).get("segments", [])
+                            if segments:
+                                # Use the first segment's embedding (full video)
+                                return segments[0].get("embeddings_float", [])
+                            break
+                        if status_data.get("status") == "failed":
+                            logger.warning("twelvelabs.embed_failed task=%s", task_id)
+                            return None
+
+                elif image_bytes:
+                    import base64
+                    response = await client.post(
+                        "/embed",
+                        json={
+                            "model_name": settings.TWELVELABS_EMBED_MODEL,
+                            "image_base64": base64.b64encode(image_bytes).decode(),
+                        },
+                    )
+                    response.raise_for_status()
+                    return response.json().get("image_embedding", {}).get("embeddings_float", [])
+
         except Exception as exc:
-            logger.warning("embedding.visual_failed error=%s", exc)
+            logger.warning("twelvelabs.embed_error error=%s", exc)
 
         return None
 

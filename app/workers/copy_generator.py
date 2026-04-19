@@ -101,6 +101,26 @@ class CopyGeneratorWorker(BaseWorker):
                 errors=["Failed to parse LLM response"],
             )
 
+        # Multi-pass refinement
+        max_passes = params.get("max_passes", 2)
+        quality_threshold = params.get("quality_threshold", 7.5)
+        if max_passes > 0 and result.get("drafts"):
+            from app.services.intelligence.refinement_engine import refinement_engine
+            refinement = await refinement_engine.refine(
+                task_type="copy_generation",
+                initial_output=result,
+                system_prompt=system_prompt,
+                context=f"BRIEF:\n{brief_text}\n\nEVIDENCE:\n{evidence_text[:3000]}",
+                max_passes=max_passes,
+                threshold=quality_threshold,
+            )
+            result = refinement.final_output
+            result["refinement_metadata"] = {
+                "passes_completed": refinement.passes_completed,
+                "final_score": refinement.final_grade.overall_score,
+                "improved_from_initial": refinement.improved,
+            }
+
         # Retain drafts to CREATIVE bank
         observations: list[dict[str, Any]] = []
         for draft in result.get("drafts", []):

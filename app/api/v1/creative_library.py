@@ -4,13 +4,14 @@ POST   /v1/creative-library/ingest         — ingest and auto-categorize a crea
 GET    /v1/creative-library/assets          — search creative assets by dimensions
 GET    /v1/creative-library/swipes          — search swipe file
 POST   /v1/creative-library/swipes          — manually add a swipe entry
+GET    /v1/creative-library/similar         — vector similarity search (find similar ads)
 GET    /v1/creative-library/categories      — list all categorization dimensions
 POST   /v1/creative-library/analyze-video   — trigger video analysis pipeline
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -232,6 +233,55 @@ async def add_swipe(
         awareness_level=asset.awareness_level,
         performance_tier=asset.performance_tier,
     )
+
+
+@router.get("/similar", response_model=list[dict])
+async def find_similar(
+    account_id: str = Depends(get_current_account_id),
+    db: AsyncSession = Depends(get_db),
+    reference_asset_id: str | None = Query(None, description="Find assets similar to this one"),
+    query_text: str | None = Query(None, description="Find assets matching this text query"),
+    embedding_type: str = Query("content", description="content | visual"),
+    ownership: str | None = Query(None),
+    performance_tier: str | None = Query(None),
+    limit: int = Query(10, le=50),
+) -> list[dict]:
+    """Find similar creative assets using pgvector cosine similarity.
+
+    Two modes:
+    - reference_asset_id: find assets similar to a specific one
+    - query_text: find assets matching a text description
+    """
+    if not reference_asset_id and not query_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide reference_asset_id or query_text",
+        )
+
+    results = await creative_library.find_similar(
+        db, account_id,
+        reference_asset_id=reference_asset_id,
+        query_text=query_text,
+        embedding_type=embedding_type,
+        ownership=ownership,
+        performance_tier=performance_tier,
+        limit=limit,
+    )
+
+    return [
+        {
+            "asset_id": asset.id,
+            "asset_type": asset.asset_type,
+            "ownership": asset.ownership,
+            "headline": asset.headline,
+            "format_type": asset.format_type,
+            "hook_type": asset.hook_type,
+            "performance_tier": asset.performance_tier,
+            "similarity_distance": distance,
+            "similarity_score": 1 - distance,  # cosine similarity
+        }
+        for asset, distance in results
+    ]
 
 
 @router.get("/categories")

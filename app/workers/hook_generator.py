@@ -113,39 +113,29 @@ class HookGeneratorWorker(BaseWorker):
                 errors=["Failed to parse LLM response"],
             )
 
-        # Step 2: MULTI-PASS — "push harder" strength pass
-        initial_hooks = result.get("hooks", [])
-        num_passes = params.get("strength_passes", 1)
+        # Step 2: MULTI-PASS REFINEMENT — graded iterative improvement
+        max_passes = params.get("max_passes", 3)
+        quality_threshold = params.get("quality_threshold", 7.5)
 
-        if initial_hooks and num_passes > 0:
-            hooks_text = json.dumps(initial_hooks, indent=1, default=str)
-            strength_result = await router.generate(
-                capability=Capability.CREATIVE_GENERATION,
+        if max_passes > 0 and result.get("hooks"):
+            from app.services.intelligence.refinement_engine import refinement_engine
+
+            refinement = await refinement_engine.refine(
+                task_type="hook_generation",
+                initial_output=result,
                 system_prompt=system_prompt,
-                user_prompt=(
-                    f"STRENGTH PASS: Take these {len(initial_hooks)} hooks and make each one "
-                    f"MORE SPECIFIC, MORE PROOF-ANCHORED, and MORE EMOTIONALLY PROVOCATIVE.\n\n"
-                    f"For each hook:\n"
-                    f"- Replace vague language with exact numbers, times, or quotes\n"
-                    f"- Make the proof anchor visible in the hook itself\n"
-                    f"- Push the emotional intensity up one level\n"
-                    f"- If it could work for a competitor, rewrite until it can't\n\n"
-                    f"CURRENT HOOKS:\n{hooks_text}\n\n"
-                    f"Return the STRENGTHENED versions plus any new hooks that emerged."
-                ),
-                temperature=0.8,
-                max_tokens=6000,
-                json_schema=HOOK_GENERATION_SCHEMA,
+                context=f"BRIEF:\n{brief_text}\n\nEVIDENCE:\n{evidence_text[:3000]}",
+                max_passes=max_passes,
+                threshold=quality_threshold,
             )
 
-            if not strength_result.get("_parse_error"):
-                strengthened = strength_result.get("hooks", [])
-                if strengthened:
-                    result["hooks"] = strengthened
-                    result["strength_pass_notes"] = strength_result.get(
-                        "strength_pass_notes",
-                        f"Strengthened {len(initial_hooks)} hooks in {num_passes} pass(es)",
-                    )
+            result = refinement.final_output
+            result["refinement_metadata"] = {
+                "passes_completed": refinement.passes_completed,
+                "final_score": refinement.final_grade.overall_score,
+                "improved_from_initial": refinement.improved,
+                "pass_scores": [g.overall_score for g in refinement.all_grades],
+            }
 
         # Validate hook quality
         quality_warnings: list[str] = []
