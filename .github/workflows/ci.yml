@@ -44,7 +44,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install ".[dev]"
+        run: pip install ".[dev,llm]"
 
       - name: Run tests
         env:
