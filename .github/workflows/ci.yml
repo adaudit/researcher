@@ -43,8 +43,11 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpq-dev
+
       - name: Install dependencies
-        run: pip install ".[dev,llm]"
+        run: pip install ".[dev]"
 
       - name: Run tests
         env:
