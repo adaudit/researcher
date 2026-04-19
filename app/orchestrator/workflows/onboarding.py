@@ -135,6 +135,21 @@ async def _run_onboarding_async(
     results["baseline_reflection"] = reflection_result.data
     step_log.append(build_step_log_entry("memory_reflection", "completed"))
 
+    # Initialize per-account skills and template library
+    try:
+        from app.services.intelligence.skill_manager import skill_manager
+        await skill_manager.initialize_skills(account_id)
+        step_log.append(build_step_log_entry("skill_init", "completed"))
+    except Exception:
+        step_log.append(build_step_log_entry("skill_init", "skipped"))
+
+    try:
+        from app.services.intelligence.template_library import template_library
+        await template_library.initialize_global_templates()
+        step_log.append(build_step_log_entry("template_init", "completed"))
+    except Exception:
+        step_log.append(build_step_log_entry("template_init", "skipped"))
+
     return {
         "workflow_id": task_id,
         "status": "completed",

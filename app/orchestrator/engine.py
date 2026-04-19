@@ -43,8 +43,51 @@ celery_app.conf.update(
     task_routes={
         "app.orchestrator.workflows.*": {"queue": "workflows"},
         "app.orchestrator.engine.*": {"queue": "default"},
+        "autonomous.*": {"queue": "autonomous"},
     },
 )
+
+# ── Celery Beat Schedule ──────────────────────────────────────────
+# Autonomous crons that run the system without human intervention.
+
+celery_app.conf.beat_schedule = {
+    # Every hour: process new performance data → update skills
+    "hourly-learning": {
+        "task": "autonomous.hourly_learning",
+        "schedule": 3600.0,
+    },
+    # Every 24 hours: news monitor, competitor scan, new styles scan
+    "daily-research": {
+        "task": "autonomous.daily_research",
+        "schedule": 86400.0,
+    },
+    # Every 7 days: full reflection + coverage matrix + primer audit
+    "weekly-full-cycle": {
+        "task": "autonomous.weekly_full_cycle",
+        "schedule": 604800.0,
+    },
+    # Every 30 days: cross-business intelligence aggregation
+    "monthly-cross-business": {
+        "task": "autonomous.monthly_cross_business",
+        "schedule": 2592000.0,
+    },
+    # Existing weekly refresh tasks
+    "weekly-top-ad-refresh": {
+        "task": "app.orchestrator.workflows.weekly_refresh.run_top_ad_refresh",
+        "schedule": 604800.0,
+    },
+    "weekly-memory-reflection": {
+        "task": "app.orchestrator.workflows.weekly_refresh.run_memory_reflection",
+        "schedule": 604800.0,
+    },
+    "weekly-iteration-synthesis": {
+        "task": "app.orchestrator.workflows.weekly_refresh.run_iteration_synthesis",
+        "schedule": 604800.0,
+    },
+}
+
+# Import autonomous tasks so Celery discovers them
+import app.orchestrator.autonomous  # noqa: F401, E402
 
 
 # ── Workflow state machine ──────────────────────────────────────────
