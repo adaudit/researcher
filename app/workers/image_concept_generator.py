@@ -4,19 +4,26 @@ Input:  Finished ad copy
 Output: Raw image concepts ranked by scroll-stop potential
 Banks:  recall from CREATIVE, VOC, OFFER
 Sources: Copy-derived, reptile triggers, audience language, wild associations
+
+Uses 10-pass refinement with per-weakness targeted context recall to push
+concepts beyond generic stock-photo ideas toward scroll-stopping imagery.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
 from app.knowledge.base_training import get_training_context
 from app.prompts.systems import IMAGE_CONCEPT_GENERATOR_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
+from app.services.intelligence.refinement_engine import IMAGE_CONCEPT_CRITERIA, refinement_engine
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import IMAGE_CONCEPT_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
 
 
 class ImageConceptGeneratorWorker(BaseWorker):
@@ -70,55 +77,67 @@ class ImageConceptGeneratorWorker(BaseWorker):
         brief_text = json.dumps(brief, indent=1, default=str) if brief else ""
 
         training_context = get_training_context()
-        result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
-            system_prompt=f"{IMAGE_CONCEPT_GENERATOR_SYSTEM}\n\n{training_context}",
-            user_prompt=(
-                f"Generate 30-50 image concepts for this ad copy.\n\n"
-                f"AD COPY:\n{ad_copy}\n\n"
-                f"{'BRIEF:' + chr(10) + brief_text + chr(10) + chr(10) if brief_text else ''}"
-                f"CONTEXT ({len(memories)} recalled items):\n{evidence_text}\n\n"
-                f"Generate concepts from ALL source categories:\n"
-                f"1. Copy-derived (literal visualization of the copy)\n"
-                f"2. Reptile triggers (primal psychological reactions)\n"
-                f"3. Audience language (turn VOC phrases into visual scenes)\n"
-                f"4. Wild associations (unexpected metaphors/juxtapositions)\n\n"
-                f"Score each concept for scroll-stop potential (1-10) and native-feed fit (1-10). "
-                f"Include production feasibility for each."
-            ),
-            temperature=0.8,  # High creativity for visual concepts
+        system_prompt = f"{IMAGE_CONCEPT_GENERATOR_SYSTEM}\n\n{training_context}"
+        user_prompt = (
+            f"Generate 30-50 image concepts for this ad copy.\n\n"
+            f"AD COPY:\n{ad_copy}\n\n"
+            f"{'BRIEF:' + chr(10) + brief_text + chr(10) + chr(10) if brief_text else ''}"
+            f"CONTEXT ({len(memories)} recalled items):\n{evidence_text}\n\n"
+            f"Generate concepts from ALL source categories:\n"
+            f"1. Copy-derived (literal visualization of the copy)\n"
+            f"2. Reptile triggers (primal psychological reactions)\n"
+            f"3. Audience language (turn VOC phrases into visual scenes)\n"
+            f"4. Wild associations (unexpected metaphors/juxtapositions)\n\n"
+            f"Score each concept for scroll-stop potential (1-10) and native-feed fit (1-10). "
+            f"Include production feasibility for each."
+        )
+
+        # Initial generation using CONCEPT_GENERATION capability
+        initial = await router.generate(
+            capability=Capability.CONCEPT_GENERATION,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.8,
             max_tokens=8000,
             json_schema=IMAGE_CONCEPT_SCHEMA,
             context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
         )
 
-        if result.get("_parse_error"):
+        if initial.get("_parse_error"):
             return WorkerOutput(
                 worker_name=self.contract.skill_name,
                 success=False,
                 errors=["Failed to parse LLM response"],
             )
 
-        # Multi-pass refinement
-        max_passes = params.get("max_passes", 2)
-        quality_threshold = params.get("quality_threshold", 7.5)
-        if max_passes > 0 and result.get("concepts"):
-            from app.services.intelligence.refinement_engine import refinement_engine
-            refinement = await refinement_engine.refine(
-                task_type="image_concept_generation",
-                initial_output=result,
-                system_prompt=f"{IMAGE_CONCEPT_GENERATOR_SYSTEM}\n\n{training_context}",
-                context=f"AD COPY:\n{ad_copy[:2000]}\n\nEVIDENCE:\n{evidence_text[:3000]}",
-                max_passes=max_passes,
-                threshold=quality_threshold,
+        # 10-pass refinement with per-weakness targeted context
+        async def _weakness_resolver(weaknesses: list[str]) -> str:
+            from app.services.intelligence.weakness_context_map import (
+                get_top_weakness_context,
             )
-            result = refinement.final_output
-            result["refinement_metadata"] = {
-                "passes_completed": refinement.passes_completed,
-                "final_score": refinement.final_grade.overall_score,
-                "improved_from_initial": refinement.improved,
-            }
+            return await get_top_weakness_context(
+                weaknesses, account_id, offer_id,
+            )
 
+        full_context = f"AD COPY:\n{ad_copy[:2000]}\n\nEVIDENCE:\n{evidence_text[:3000]}"
+        refined = await refinement_engine.refine(
+            task_type="image_concept_generation",
+            initial_output=initial,
+            system_prompt=system_prompt,
+            context=full_context,
+            max_passes=10,
+            threshold=7.5,
+            criteria=IMAGE_CONCEPT_CRITERIA,
+            weakness_context_resolver=_weakness_resolver,
+        )
+
+        logger.info(
+            "image_concept_generator.refined passes=%d score=%.1f improved=%s",
+            refined.passes_completed, refined.final_grade.overall_score,
+            refined.improved,
+        )
+
+        result = refined.final_output
         concepts = result.get("concepts", [])
         sources_used = set(c.get("source", "unknown") for c in concepts)
 
@@ -138,6 +157,12 @@ class ImageConceptGeneratorWorker(BaseWorker):
                 "image_concepts": result,
                 "concept_count": len(concepts),
                 "sources_used": list(sources_used),
+                "refinement_passes": refined.passes_completed,
+                "refinement_score": refined.final_grade.overall_score,
+                "grade_trajectory": [
+                    {"pass": g.pass_number, "score": g.overall_score}
+                    for g in refined.all_grades
+                ],
             },
             quality_warnings=quality_warnings,
         )

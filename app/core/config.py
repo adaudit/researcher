@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # SerpAPI (Google Scholar search — free tier 250/month)
     SERPAPI_KEY: str = ""
 
+    # Image generation
+    BFL_API_KEY: str = ""         # Black Forest Labs — Flux Pro / Schnell
+    IDEOGRAM_API_KEY: str = ""    # Ideogram v3 — best text-in-image
+
     # Acquisition — ScrapCreators (social platform data)
     SCRAPECREATORS_API_KEY: str = ""
     SCRAPECREATORS_BASE_URL: str = "https://api.scrapecreators.com/v1"

@@ -1,9 +1,9 @@
-"""Creative workflow (SCRAWLS) — finished ad copies → image prompts.
+"""Creative workflow (SCRAWLS) — finished ad copies → image concepts → prompts → images.
 
-Chain: image_concept_generator → image_prompt_generator
+Chain: image_concept_generator → image_prompt_generator → image_generator (optional)
 
 Input:  Finished ad copies from the writing workflow
-Output: Image prompts ready for Midjourney/GPT-Image generation tools
+Output: Image prompts + optionally generated images (Flux/GPT-Image/Ideogram)
 """
 
 from __future__ import annotations
@@ -85,6 +85,54 @@ async def _run_creative_async(
     ))
     results["image_prompts"] = prompt_result.data
     step_log.append(build_step_log_entry("image_prompt_generator", "completed"))
+
+    # Step 3 (optional): Generate actual images if generate_images=True
+    generate_images = ad_copies[0].get("generate_images", False) if ad_copies else False
+    if generate_images:
+        step_log.append(build_step_log_entry("image_generation", "started"))
+        try:
+            from app.services.creative.image_generator import ImageProvider, image_generator
+
+            prompts_data = prompt_result.data.get("image_prompts", {}).get("prompts", [])
+            provider = ad_copies[0].get("image_provider", "flux_pro") if ad_copies else "flux_pro"
+
+            gen_requests = [
+                {
+                    "prompt": p.get("prompt", ""),
+                    "provider": provider,
+                    "aspect_ratio": p.get("format", "1:1"),
+                    "negative_prompt": p.get("negative_constraints"),
+                }
+                for p in prompts_data[:10]
+            ]
+
+            gen_results = await image_generator.generate_batch(
+                gen_requests, default_provider=ImageProvider(provider),
+            )
+
+            results["generated_images"] = [
+                {
+                    "provider": r.provider,
+                    "image_url": r.image_url,
+                    "width": r.width,
+                    "height": r.height,
+                    "cost": r.cost,
+                    "error": r.error,
+                }
+                for r in gen_results
+            ]
+            results["generation_cost"] = sum(r.cost for r in gen_results)
+            results["images_generated"] = sum(1 for r in gen_results if r.image_url)
+
+            step_log.append(build_step_log_entry(
+                "image_generation", "completed",
+                f"Generated {results['images_generated']} images, cost=${results['generation_cost']:.2f}",
+            ))
+        except Exception as exc:
+            logger.warning("creative.image_generation_failed error=%s", exc)
+            step_log.append(build_step_log_entry(
+                "image_generation", "failed", str(exc)[:200],
+            ))
 
     return {
         "workflow_id": task_id,

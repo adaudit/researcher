@@ -202,7 +202,7 @@ class CreativeProducerWorker(BaseWorker):
         )
 
         result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.LONG_FORM_COPY,
             system_prompt=full_system,
             user_prompt=(
                 f"Create a complete {format_type} creative package.\n\n"

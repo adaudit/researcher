@@ -79,7 +79,7 @@ class CopyGeneratorWorker(BaseWorker):
         system_prompt = f"{COPY_GENERATOR_SYSTEM}\n\n{training_context}{primer_text}"
 
         result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.LONG_FORM_COPY,
             system_prompt=system_prompt,
             user_prompt=(
                 f"Write ad copy drafts based on the following brief and evidence.\n\n"

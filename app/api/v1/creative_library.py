@@ -318,3 +318,45 @@ async def trigger_video_analysis(
         "data": result.data,
         "errors": result.errors,
     }
+
+
+class ImageGenerateRequest(BaseModel):
+    prompt: str = Field(..., description="Image generation prompt")
+    provider: str = Field("flux_pro", description="flux_pro | flux_schnell | gpt_image | ideogram")
+    aspect_ratio: str = Field("1:1", description="1:1 | 4:5 | 9:16 | 16:9")
+    negative_prompt: str | None = None
+    style: str | None = None
+    num_images: int = Field(1, ge=1, le=4)
+
+
+@router.post("/generate-image", status_code=status.HTTP_201_CREATED)
+async def generate_image(
+    body: ImageGenerateRequest,
+    account_id: str = Depends(get_current_account_id),
+) -> dict:
+    """Generate an image from a prompt using the specified provider."""
+    from app.services.creative.image_generator import image_generator
+
+    results = await image_generator.generate(
+        prompt=body.prompt,
+        provider=body.provider,
+        aspect_ratio=body.aspect_ratio,
+        negative_prompt=body.negative_prompt,
+        style=body.style,
+        num_images=body.num_images,
+    )
+
+    return {
+        "images": [
+            {
+                "provider": r.provider,
+                "image_url": r.image_url,
+                "width": r.width,
+                "height": r.height,
+                "cost": r.cost,
+                "error": r.error,
+            }
+            for r in results
+        ],
+        "total_cost": sum(r.cost for r in results),
+    }

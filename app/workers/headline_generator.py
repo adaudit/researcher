@@ -76,7 +76,7 @@ class HeadlineGeneratorWorker(BaseWorker):
         system_prompt = f"{HEADLINE_GENERATOR_SYSTEM}\n\n{training_context}{primer_text}"
 
         result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.HOOK_GENERATION,
             system_prompt=system_prompt,
             user_prompt=(
                 f"Generate 10 headlines for the following ad copy.\n\n"

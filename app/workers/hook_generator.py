@@ -96,7 +96,7 @@ class HookGeneratorWorker(BaseWorker):
 
         # Step 1: Generate initial hooks
         result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.HOOK_GENERATION,
             system_prompt=system_prompt,
             user_prompt=(
                 f"Generate 15-20 hooks based on the following brief and evidence.\n\n"

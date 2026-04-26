@@ -88,7 +88,7 @@ class HookEngineerWorker(BaseWorker):
 
         # Initial generation
         initial = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.HOOK_GENERATION,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=0.5,

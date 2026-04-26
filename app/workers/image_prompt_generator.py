@@ -55,7 +55,7 @@ class ImagePromptGeneratorWorker(BaseWorker):
 
         training_context = get_training_context(include_examples=False)
         result = await router.generate(
-            capability=Capability.CREATIVE_GENERATION,
+            capability=Capability.CONCEPT_GENERATION,
             system_prompt=f"{IMAGE_PROMPT_GENERATOR_SYSTEM}\n\n{training_context}",
             user_prompt=(
                 f"Generate image prompts for these {len(concepts)} concepts.\n\n"
