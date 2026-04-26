@@ -7,6 +7,7 @@ Uses Gemini for image/video ad analysis and fast models for text.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.llm.router import Capability, router
@@ -16,6 +17,8 @@ from app.workers.extractors.base import (
     ExtractionResult,
     SourcePlatform,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MetaAdsExtractor(BaseExtractor):
@@ -114,8 +117,14 @@ class MetaAdsExtractor(BaseExtractor):
                             suggested_category="hook",
                             platform_metadata={"visual_context": visual},
                         ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Visual analysis is best-effort per ad — keep the
+                    # text payloads we already collected and log so
+                    # systemic failures (model quotas, etc.) are visible.
+                    logger.debug(
+                        "meta_ads.visual_extraction_failed ad=%s error=%s",
+                        ad.get("id"), exc,
+                    )
 
         # ── Extract from comments ──
         for comment in comments:

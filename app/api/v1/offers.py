@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,6 +15,8 @@ from app.db.models.offer import Offer
 from app.db.session import get_db
 from app.schemas.offer import OfferCreate, OfferResponse, OfferUpdate
 from app.services.hindsight.banks import provision_offer_bank
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -35,13 +38,18 @@ async def create_offer(
     await db.commit()
     await db.refresh(offer)
 
-    # Provision Hindsight offer bank
+    # Provision Hindsight offer bank — non-blocking, but logged as a warning
+    # so missing banks are visible in production. Workers that recall from
+    # the offer bank will surface the failure when they hit empty results.
     try:
         bank_id = await provision_offer_bank(account_id, offer_id)
         offer.hindsight_offer_bank_id = bank_id
         await db.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "offer.bank_provision_failed account=%s offer=%s error=%s",
+            account_id, offer_id, exc,
+        )
 
     return offer
 

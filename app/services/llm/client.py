@@ -54,7 +54,7 @@ class LLMClient:
     """Anthropic Claude client with prompt caching and structured output."""
 
     def __init__(self) -> None:
-        self._client = anthropic.AsyncAnthropic(api_key=settings.OPENAI_API_KEY or "")
+        self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY or "")
         # Cache for system prompts — prompt caching stores the first
         # large block so repeated calls with the same system prompt
         # get cache hits.

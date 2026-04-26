@@ -21,7 +21,10 @@ Banks:  recall from OFFER, CREATIVE, VOC, PRIMERS, SKILLS
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from app.knowledge.base_training import get_training_context
 from app.knowledge.primers import PrimerType, primer_store
@@ -177,7 +180,8 @@ class CreativeProducerWorker(BaseWorker):
             [SkillDomain.HOOKS, SkillDomain.VISUALS, SkillDomain.COPY, SkillDomain.FORMAT],
         )
 
-        # Load global intelligence
+        # Load global intelligence — best-effort. Empty when fewer than 3
+        # accounts have generated reflections for this pattern category.
         global_context = ""
         try:
             from app.services.intelligence.global_brain import global_brain
@@ -185,8 +189,11 @@ class CreativeProducerWorker(BaseWorker):
                 "creative_producer",
                 f"{format_type} creative winning pattern",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "creative_producer.global_context_unavailable format=%s error=%s",
+                format_type, exc,
+            )
 
         training_context = get_training_context(include_examples=False)
         full_system = (

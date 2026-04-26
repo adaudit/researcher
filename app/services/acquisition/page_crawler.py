@@ -94,8 +94,10 @@ async def _fetch_with_playwright(
         if wait_for_idle:
             try:
                 await page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                pass  # Some pages never reach idle — continue anyway
+            except Exception as exc:
+                # Some pages stream long-tail requests (analytics, heartbeats)
+                # and never reach idle. Continue with whatever rendered.
+                logger.debug("page.networkidle_timeout url=%s error=%s", url, exc)
 
         # Scroll to trigger lazy loading
         await _scroll_page(page)
@@ -154,8 +156,9 @@ async def _scroll_page(page) -> None:
         # Scroll back to top
         await page.evaluate("window.scrollTo(0, 0)")
         await page.wait_for_timeout(500)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Scrolling failures are non-fatal — capture whatever we have.
+        logger.debug("page.scroll_failed error=%s", exc)
 
 
 async def _fetch_static(url: str, *, timeout: float = 30.0) -> PageCapture:

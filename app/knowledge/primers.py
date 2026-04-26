@@ -139,7 +139,11 @@ class PrimerStore:
                         "content": results[0].get("content", ""),
                         "memory_id": results[0].get("id"),
                     })
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "primer.list_recall_failed account=%s offer=%s type=%s error=%s",
+                    account_id, offer_id, pt.value, exc,
+                )
                 continue
 
         return primers

@@ -7,6 +7,7 @@ TikTok-specific engagement metrics (shares are unusually important).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.llm.router import Capability, router
@@ -16,6 +17,8 @@ from app.workers.extractors.base import (
     ExtractionResult,
     SourcePlatform,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TikTokExtractor(BaseExtractor):
@@ -106,8 +109,13 @@ class TikTokExtractor(BaseExtractor):
                             suggested_category="hook",
                             platform_metadata={"video_analysis": visual},
                         ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Video analysis is best-effort per video — keep
+                    # text payloads from comments and log for visibility.
+                    logger.debug(
+                        "tiktok.video_extraction_failed video=%s error=%s",
+                        video.get("id"), exc,
+                    )
 
         # ── Extract from comments ──
         for comment in comments:

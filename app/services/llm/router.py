@@ -14,12 +14,62 @@ from __future__ import annotations
 
 import json
 import logging
+from contextvars import ContextVar
 from enum import Enum
 from typing import Any
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Per-task trace buffer — when a worker calls start_trace_capture(),
+# every router.generate() call inside that async task records its
+# capability/provider/model/prompts/response here. BaseWorker reads
+# the buffer after execute() and ships it to the training collector.
+#
+# This replaces the per-worker `_llm_trace` stash pattern. Workers
+# don't need to manually capture — the router does it automatically.
+_trace_buffer: ContextVar[list[dict[str, Any]] | None] = ContextVar(
+    "llm_trace_buffer", default=None,
+)
+
+
+def start_trace_capture() -> None:
+    """Begin capturing LLM traces in the current async task."""
+    _trace_buffer.set([])
+
+
+def pop_traces() -> list[dict[str, Any]]:
+    """Return and clear traces captured in the current async task."""
+    buf = _trace_buffer.get()
+    if buf is None:
+        return []
+    _trace_buffer.set(None)
+    return buf
+
+
+def _record_trace(
+    capability: Capability,
+    provider: Provider,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    response: dict[str, Any],
+) -> None:
+    """Append a trace to the active buffer if capture is enabled."""
+    buf = _trace_buffer.get()
+    if buf is None:
+        return
+    parse_failed = bool(response.get("_parse_error"))
+    buf.append({
+        "capability": capability.value,
+        "provider": provider.value,
+        "model": model,
+        "system_prompt": system_prompt[:8000],
+        "user_prompt": user_prompt[:8000],
+        "response": json.dumps(response, default=str)[:8000],
+        "quality_score": 0 if parse_failed else 1,
+    })
 
 
 class Capability(str, Enum):
@@ -274,32 +324,38 @@ class ModelRouter:
             )
 
         if provider == Provider.ANTHROPIC:
-            return await self._generate_anthropic(
+            response = await self._generate_anthropic(
                 model, system_prompt, user_prompt, temperature, max_tokens,
                 context_documents, images,
             )
         elif provider == Provider.GOOGLE:
-            return await self._generate_google(
+            response = await self._generate_google(
                 model, system_prompt, user_prompt, temperature, max_tokens,
                 images, video_uri,
             )
         elif provider == Provider.OPENAI:
-            return await self._generate_openai(
+            response = await self._generate_openai(
                 model, system_prompt, user_prompt, temperature, max_tokens,
                 images,
             )
         elif provider == Provider.ZAI:
-            return await self._generate_openai_compat(
+            response = await self._generate_openai_compat(
                 Provider.ZAI, model, system_prompt, user_prompt,
                 temperature, max_tokens,
             )
         elif provider == Provider.LOCAL:
-            return await self._generate_openai_compat(
+            response = await self._generate_openai_compat(
                 Provider.LOCAL, model, system_prompt, user_prompt,
                 temperature, max_tokens,
             )
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
 
-        raise ValueError(f"Unknown provider: {provider}")
+        # Record trace for training data capture (no-op if capture not active)
+        _record_trace(
+            capability, provider, model, system_prompt, user_prompt, response,
+        )
+        return response
 
     # ── Provider implementations ────────────────────────────────────
 

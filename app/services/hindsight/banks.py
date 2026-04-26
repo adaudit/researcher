@@ -149,7 +149,13 @@ async def provision_offer_bank(account_id: str, offer_id: str) -> str:
 
 
 async def _ensure_bank(bank_id: str, spec: BankSpec) -> None:
-    """Create bank if it doesn't exist — swallow 409 conflicts."""
+    """Create bank if it doesn't exist — 409 conflicts are expected.
+
+    Logs at debug for normal already-exists cases (HindsightConflict / 409)
+    and at warning for any other failure so production missing-bank issues
+    are visible. The caller should propagate the exception so the API
+    layer can record the failure.
+    """
     try:
         await hindsight_client.create_bank(
             bank_id,
@@ -157,9 +163,16 @@ async def _ensure_bank(bank_id: str, spec: BankSpec) -> None:
             metadata={"bank_type": spec.bank_type.value},
         )
         logger.info("hindsight.bank_created id=%s", bank_id)
-    except Exception:
-        # Bank may already exist — log and continue
-        logger.debug("hindsight.bank_exists_or_error id=%s", bank_id)
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "409" in msg or "conflict" in msg or "exists" in msg or "already" in msg:
+            logger.debug("hindsight.bank_exists id=%s", bank_id)
+        else:
+            logger.warning(
+                "hindsight.bank_create_failed id=%s error=%s",
+                bank_id, exc,
+            )
+            raise
 
 
 def recall_scope_for_worker(worker_name: str, account_id: str, offer_id: str | None = None) -> list[str]:

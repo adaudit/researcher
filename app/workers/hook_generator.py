@@ -9,6 +9,7 @@ Guard:  No generic hooks; every hook needs proof anchor
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.knowledge.base_training import get_training_context
@@ -19,6 +20,8 @@ from app.services.hindsight.memory import recall_for_worker
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import HOOK_GENERATION_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
 
 
 class HookGeneratorWorker(BaseWorker):
@@ -77,14 +80,16 @@ class HookGeneratorWorker(BaseWorker):
         system_prompt = f"{HOOK_GENERATOR_SYSTEM}\n\n{training_context}{primer_text}"
 
         # Load account skills if available
+        # Load learnable skills for this account — best-effort. New accounts
+        # have no skill content yet; runs proceed with base training only.
         skills_context = ""
         try:
             from app.services.intelligence.skill_manager import SkillDomain, skill_manager
             skills_context = await skill_manager.get_skills_for_prompt(
                 account_id, [SkillDomain.HOOKS, SkillDomain.AUDIENCE],
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("hook_generator.skills_unavailable account=%s error=%s", account_id, exc)
 
         if skills_context:
             system_prompt += f"\n\n{skills_context}"

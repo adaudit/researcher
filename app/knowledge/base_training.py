@@ -13,6 +13,11 @@ The training corpus is versioned — when the team learns something new
 about what works, it gets added here and every worker benefits.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 # ── Core Principles ─────────────────────────────────────────────────
 
 CREATIVE_STRATEGY_PRINCIPLES = """\
@@ -526,7 +531,9 @@ def get_training_context(
             corpus_context = corpus_store.load_all_for_context(max_chars=corpus_budget)
             if corpus_context:
                 parts.append(corpus_context)
-        except Exception:
-            pass  # Corpus loading is best-effort — don't break workers
+        except Exception as exc:
+            # Corpus loading is best-effort — workers run with built-in
+            # principles only. Log so missing corpus is visible.
+            logger.warning("training_context.corpus_load_failed error=%s", exc)
 
     return "\n\n---\n\n".join(parts)

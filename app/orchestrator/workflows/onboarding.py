@@ -140,15 +140,25 @@ async def _run_onboarding_async(
         from app.services.intelligence.skill_manager import skill_manager
         await skill_manager.initialize_skills(account_id)
         step_log.append(build_step_log_entry("skill_init", "completed"))
-    except Exception:
-        step_log.append(build_step_log_entry("skill_init", "skipped"))
+    except Exception as exc:
+        logger.warning(
+            "onboarding.skill_init_failed account=%s error=%s", account_id, exc,
+        )
+        step_log.append(build_step_log_entry(
+            "skill_init", "skipped", f"error: {exc}"[:200],
+        ))
 
     try:
         from app.services.intelligence.template_library import template_library
         await template_library.initialize_global_templates()
         step_log.append(build_step_log_entry("template_init", "completed"))
-    except Exception:
-        step_log.append(build_step_log_entry("template_init", "skipped"))
+    except Exception as exc:
+        logger.warning(
+            "onboarding.template_init_failed account=%s error=%s", account_id, exc,
+        )
+        step_log.append(build_step_log_entry(
+            "template_init", "skipped", f"error: {exc}"[:200],
+        ))
 
     return {
         "workflow_id": task_id,

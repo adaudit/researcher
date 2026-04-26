@@ -12,12 +12,15 @@ Guard:  Must separate visible claims from inference
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.knowledge.base_training import get_training_context
 from app.knowledge.extraction_frameworks import get_framework_prompt
 from app.prompts.systems import LANDING_PAGE_ANALYZER_SYSTEM
 from app.services.hindsight.banks import BankType
+
+logger = logging.getLogger(__name__)
 from app.services.hindsight.memory import recall_for_worker, retain_observation
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import LANDING_PAGE_ANALYSIS_SCHEMA
@@ -116,7 +119,12 @@ class LandingPageAnalyzerWorker(BaseWorker):
                         },
                     },
                 )
-            except Exception:
+            except Exception as exc:
+                # Visual analysis is supplementary — fall back to text-only
+                # analysis below. Log so model/quota issues are visible.
+                logger.warning(
+                    "landing_page.visual_analysis_failed error=%s", exc,
+                )
                 visual_analysis = {"note": "Visual analysis unavailable"}
 
         # ── Step 2: Strategic text analysis via Claude ──

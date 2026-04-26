@@ -113,12 +113,19 @@ class BaseWorker(ABC):
 
     async def run(self, worker_input: WorkerInput) -> WorkerOutput:
         """Full execution pipeline: execute -> validate -> capture training data -> log."""
+        from app.services.llm.router import pop_traces, start_trace_capture
+
         logger.info(
             "worker.start name=%s account=%s offer=%s",
             self.contract.skill_name,
             worker_input.account_id,
             worker_input.offer_id,
         )
+
+        # Start trace capture so every router.generate() call inside
+        # execute() is recorded for the training collector.
+        start_trace_capture()
+
         try:
             output = await self.execute(worker_input)
             output = await self.validate_output(output)
@@ -130,32 +137,50 @@ class BaseWorker(ABC):
                 errors=[str(exc)],
             )
 
-        # Auto-capture training data if the worker stashed an LLM trace
-        llm_trace = output.data.get("_llm_trace")
-        if llm_trace and output.success:
+        # Pop any traces captured by the router during execute()
+        captured_traces = pop_traces()
+
+        # Back-compat: workers that still stash _llm_trace in output.data
+        # (creative_ingest is the only one currently). Migrate to using
+        # the router-side capture path automatically.
+        legacy_trace = output.data.get("_llm_trace") if output.data else None
+        if legacy_trace:
+            captured_traces.append(legacy_trace)
+            # Remove the legacy stash so it doesn't leak into JSON responses
+            try:
+                del output.data["_llm_trace"]
+            except (KeyError, TypeError):
+                pass
+
+        if captured_traces and output.success:
             try:
                 collector = _get_training_collector()
-                collector.capture(
-                    worker_name=self.contract.skill_name,
-                    capability=llm_trace.get("capability", "unknown"),
-                    provider=llm_trace.get("provider", "unknown"),
-                    model=llm_trace.get("model", "unknown"),
-                    system_prompt=llm_trace.get("system_prompt", ""),
-                    user_prompt=llm_trace.get("user_prompt", ""),
-                    response=llm_trace.get("response", ""),
-                    quality_score=llm_trace.get("quality_score", 0),
-                    account_id=worker_input.account_id,
-                    offer_id=worker_input.offer_id,
-                    tags=[self.contract.skill_name],
+                for trace in captured_traces:
+                    collector.capture(
+                        worker_name=self.contract.skill_name,
+                        capability=trace.get("capability", "unknown"),
+                        provider=trace.get("provider", "unknown"),
+                        model=trace.get("model", "unknown"),
+                        system_prompt=trace.get("system_prompt", ""),
+                        user_prompt=trace.get("user_prompt", ""),
+                        response=trace.get("response", ""),
+                        quality_score=trace.get("quality_score", 0),
+                        account_id=worker_input.account_id,
+                        offer_id=worker_input.offer_id,
+                        tags=[self.contract.skill_name],
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "training.capture_failed name=%s traces=%d error=%s",
+                    self.contract.skill_name, len(captured_traces), exc,
                 )
-            except Exception:
-                logger.debug("training.capture_failed name=%s", self.contract.skill_name)
 
         logger.info(
-            "worker.complete name=%s success=%s observations=%d warnings=%d",
+            "worker.complete name=%s success=%s observations=%d warnings=%d traces=%d",
             self.contract.skill_name,
             output.success,
             len(output.observations),
             len(output.quality_warnings),
+            len(captured_traces),
         )
         return output

@@ -152,7 +152,8 @@ class TemplateLibrary:
                     if platform in r.get("metadata", {}).get("platforms", [])
                 ]
             return results
-        except Exception:
+        except Exception as exc:
+            logger.warning("template_library.recall_failed error=%s", exc)
             return []
 
     async def get_templates_for_prompt(

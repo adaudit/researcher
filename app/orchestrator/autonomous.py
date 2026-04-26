@@ -87,8 +87,14 @@ async def _hourly_learning_async() -> dict[str, Any]:
                     )
                 asset.processing_status = "learned"
                 updates += 1
-            except Exception:
-                logger.debug("hourly.learn_failed asset=%s", asset.id)
+            except Exception as exc:
+                # Hourly learning is the self-learning loop — failures
+                # mean skills are stale. Log at warning so production
+                # cron failures are surfaced.
+                logger.warning(
+                    "hourly.learn_failed asset=%s account=%s error=%s",
+                    asset.id, asset.account_id, exc,
+                )
 
         if updates:
             await db.commit()
@@ -144,8 +150,13 @@ async def _daily_research_async() -> dict[str, Any]:
                     # New styles scan
                     await _scan_new_styles(account.id, offer.id)
 
-                except Exception:
-                    logger.debug("daily.research_failed account=%s offer=%s", account.id, offer.id)
+                except Exception as exc:
+                    # Daily research drives proactive intelligence —
+                    # silent failures degrade insight quality.
+                    logger.warning(
+                        "daily.research_failed account=%s offer=%s error=%s",
+                        account.id, offer.id, exc,
+                    )
 
     step_log.append(build_step_log_entry("daily_research", "completed"))
     return {"status": "completed", "step_log": step_log}
@@ -299,8 +310,14 @@ async def _weekly_full_cycle_async() -> dict[str, Any]:
 
                 accounts_processed += 1
 
-            except Exception:
-                logger.debug("weekly.account_failed account=%s", account.id)
+            except Exception as exc:
+                # Weekly reflection is when durable lessons get distilled —
+                # a silent failure here means the account misses a learning
+                # cycle. Surface at warning.
+                logger.warning(
+                    "weekly.account_failed account=%s error=%s",
+                    account.id, exc,
+                )
 
     step_log.append(build_step_log_entry("weekly_cycle", "completed",
                                          f"Processed {accounts_processed} accounts"))

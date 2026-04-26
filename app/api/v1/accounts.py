@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,8 @@ from app.db.models.account import Account
 from app.db.session import get_db
 from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
 from app.services.hindsight.banks import provision_account_banks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -37,11 +40,16 @@ async def create_account(
     await db.commit()
     await db.refresh(account)
 
-    # Provision Hindsight banks
+    # Provision Hindsight banks — non-blocking, but logged as warning so
+    # missing banks are visible. A reconciliation job (TODO) should retry
+    # provisioning for accounts whose banks failed to create.
     try:
         await provision_account_banks(account.id)
-    except Exception:
-        pass  # Non-blocking — banks can be provisioned later
+    except Exception as exc:
+        logger.warning(
+            "account.bank_provision_failed account=%s error=%s",
+            account.id, exc,
+        )
 
     return account
 

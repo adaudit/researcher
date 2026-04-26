@@ -18,6 +18,7 @@ Banks:  recall from CREATIVE, OFFER, SKILLS; write to CREATIVE, SKILLS
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.knowledge.base_training import get_training_context
@@ -26,6 +27,8 @@ from app.services.hindsight.memory import recall_for_worker, retain_observation
 from app.services.intelligence.skill_manager import SkillDomain, skill_manager
 from app.services.llm.router import Capability, router
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
 
 AD_ANALYSIS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -159,7 +162,8 @@ class AdAnalyzerWorker(BaseWorker):
             [SkillDomain.HOOKS, SkillDomain.VISUALS, SkillDomain.COPY, SkillDomain.AUDIENCE],
         )
 
-        # Load global intelligence
+        # Load global intelligence — best-effort, falls back to empty
+        # context if the global brain hasn't aggregated yet (< 3 accounts).
         global_context = ""
         try:
             from app.services.intelligence.global_brain import global_brain
@@ -167,8 +171,8 @@ class AdAnalyzerWorker(BaseWorker):
                 "ad_analyzer",
                 "winning ad patterns visual psychology hook",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("ad_analyzer.global_context_unavailable error=%s", exc)
 
         # Assemble the ad creative data
         ad_copy = params.get("ad_copy", "")

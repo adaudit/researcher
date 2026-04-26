@@ -8,6 +8,7 @@ Guard:  Cannot promote weak hypotheses into durable memory
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.prompts.systems import MEMORY_REFLECTION_SYSTEM
@@ -17,6 +18,8 @@ from app.knowledge.base_training import get_training_context
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import REFLECTION_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryReflectionWorker(BaseWorker):
@@ -113,8 +116,14 @@ class MemoryReflectionWorker(BaseWorker):
                 )),
             )
             analysis["hindsight_reflection_id"] = hindsight_reflection.get("id")
-        except Exception:
-            pass  # Hindsight reflection is supplementary
+        except Exception as exc:
+            # Hindsight native reflection is supplementary to the LLM
+            # reflection above — log so failures with the memory substrate
+            # are visible without breaking the worker.
+            logger.warning(
+                "memory_reflection.hindsight_reflect_failed account=%s error=%s",
+                worker_input.account_id, exc,
+            )
 
         return WorkerOutput(
             worker_name=self.contract.skill_name,
