@@ -76,9 +76,9 @@ class Capability(str, Enum):
     """What the task needs the model to be good at."""
 
     # Reasoning and strategy
-    STRATEGIC_REASONING = "strategic_reasoning"   # desire maps, differentiation, hooks
+    STRATEGIC_REASONING = "strategic_reasoning"   # desire maps, differentiation, coverage
     COPY_ANALYSIS = "copy_analysis"               # copy police, compression tax
-    SYNTHESIS = "synthesis"                        # briefs, iteration planning
+    SYNTHESIS = "synthesis"                        # iteration planning
     REFLECTION = "reflection"                     # memory reflection, lesson extraction
 
     # Extraction
@@ -90,8 +90,12 @@ class Capability(str, Enum):
     IMAGE_ANALYSIS = "image_analysis"             # screenshot analysis, ad creative review
     LONG_DOCUMENT = "long_document"               # full page HTML, long transcripts
 
-    # Generation
-    CREATIVE_GENERATION = "creative_generation"   # hook writing, angle generation
+    # Generation — split by copy type per benchmark data
+    CREATIVE_GENERATION = "creative_generation"   # general fallback
+    LONG_FORM_COPY = "long_form_copy"             # VSL scripts, long-form ads, nuanced prose
+    DR_COPY = "dr_copy"                           # direct response, email, landing page, structured
+    HOOK_GENERATION = "hook_generation"            # hooks, headlines, punchy short-form
+    CONCEPT_GENERATION = "concept_generation"      # image concepts, visual directions
 
 
 class Provider(str, Enum):
@@ -99,6 +103,7 @@ class Provider(str, Enum):
     GOOGLE = "google"
     OPENAI = "openai"
     ZAI = "zai"      # Z.ai GLM-5.1 — OpenAI-compatible API
+    XAI = "xai"      # xAI Grok — hooks/headlines, X-corpus-trained
     LOCAL = "local"   # Ollama/vLLM — Gemma 4, Llama, etc.
 
 
@@ -120,63 +125,112 @@ class Provider(str, Enum):
 #
 # Each list is a fallback chain — first available provider wins.
 
+# ── Capability → Provider routing table ─────────────────────────────
+#
+# Cost tiers (per million tokens, input/output, April 2026):
+#
+#   TIER 0  LOCAL (Gemma 4 via Ollama/vLLM)        $0 / $0
+#   TIER 1  Gemini 3 Flash                         $0.50 / $3
+#   TIER 2  DeepSeek V4 / Qwen 3.5 Flash           $0.065-$0.30 / $0.26-$0.50
+#   TIER 3  GLM-5.1 (Z.ai)                         $0.95 / $3.15
+#   TIER 4  Grok 4 (xAI)                           $3 / $15
+#   TIER 5  GPT-5.4 (OpenAI)                       $2.50 / $10
+#   TIER 6  Opus 4.6 (Anthropic)                   $5 / $25
+#
+# Strategy (by copy type, per benchmark data):
+#   - Opus 4.6: long-form copy, nuanced prose (Arena IF: 1500)
+#   - GPT-5.4: DR copy, email sequences, structured (IFEval: 96)
+#   - Grok 4: hooks, headlines, punchy short-form (bigger swings, X-trained)
+#   - Gemini 3.1 Pro: creative boldness at low cost (Arena CW: 1487)
+#   - GLM-5.1: reasoning/synthesis (BenchLM 84, NOT final voice)
+#   - DeepSeek V4: cheap refinement passes (NOT final voice)
+#   - Local/Flash: extraction, classification, high-volume grading
+
 CAPABILITY_ROUTING: dict[Capability, list[tuple[Provider, str]]] = {
-    # ── Opus — ONLY writing that IS the product ─────────────────────
-    Capability.CREATIVE_GENERATION: [
+    # ── Long-form copy: nuanced prose, VSL scripts, structural coherence ──
+    Capability.LONG_FORM_COPY: [
         (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.GOOGLE, "gemini-3.1-pro"),
         (Provider.ZAI, "glm-5.1"),
-        (Provider.GOOGLE, "gemini-2.5-pro"),
     ],
 
-    # ── GLM-5.1 — analysis/reasoning at $0.95/M (was Opus at $15/M) ─
+    # ── DR copy: email, landing page, structured formats, CTA patterns ──
+    Capability.DR_COPY: [
+        (Provider.OPENAI, "gpt-5.4"),
+        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.ZAI, "glm-5.1"),
+    ],
+
+    # ── Hooks/headlines: punchy, irreverent, X-corpus-trained ──
+    Capability.HOOK_GENERATION: [
+        (Provider.XAI, ""),
+        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.OPENAI, "gpt-5.4"),
+    ],
+
+    # ── Image/visual concepts: creative boldness at low cost ──
+    Capability.CONCEPT_GENERATION: [
+        (Provider.GOOGLE, "gemini-3.1-pro"),
+        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.ZAI, "glm-5.1"),
+    ],
+
+    # ── General creative (fallback when specific type not set) ──
+    Capability.CREATIVE_GENERATION: [
+        (Provider.ANTHROPIC, "claude-opus-4-6"),
+        (Provider.OPENAI, "gpt-5.4"),
+        (Provider.ZAI, "glm-5.1"),
+    ],
+
+    # ── Reasoning/strategy: NOT customer-facing voice ──
     Capability.STRATEGIC_REASONING: [
         (Provider.ZAI, "glm-5.1"),
         (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-        (Provider.GOOGLE, "gemini-2.5-pro"),
+        (Provider.GOOGLE, "gemini-3-flash"),
     ],
     Capability.SYNTHESIS: [
         (Provider.ZAI, "glm-5.1"),
         (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-        (Provider.GOOGLE, "gemini-2.5-pro"),
+        (Provider.GOOGLE, "gemini-3-flash"),
     ],
     Capability.REFLECTION: [
         (Provider.ZAI, "glm-5.1"),
         (Provider.ANTHROPIC, "claude-sonnet-4-6"),
-        (Provider.GOOGLE, "gemini-2.5-pro"),
+        (Provider.GOOGLE, "gemini-3-flash"),
     ],
 
-    # ── Gemma 4 local → Flash fallback — copy review is mechanical ──
+    # ── Copy review: mechanical grading, local-first ──
     Capability.COPY_ANALYSIS: [
         (Provider.LOCAL, ""),
-        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.GOOGLE, "gemini-3-flash"),
         (Provider.ZAI, "glm-5.1"),
     ],
 
-    # ── Gemma 4 local → Flash fallback — extraction is mechanical ───
+    # ── Extraction: high-volume, cheap, local-first ──
     Capability.TEXT_EXTRACTION: [
         (Provider.LOCAL, ""),
-        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.GOOGLE, "gemini-3-flash"),
         (Provider.ZAI, "glm-5.1"),
     ],
     Capability.CLASSIFICATION: [
         (Provider.LOCAL, ""),
-        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.GOOGLE, "gemini-3-flash"),
         (Provider.ZAI, "glm-5.1"),
     ],
 
-    # ── Gemini Flash — multimodal + long context (cheapest option) ──
+    # ── Multimodal ──
     Capability.VIDEO_ANALYSIS: [
-        (Provider.GOOGLE, "gemini-2.5-flash"),
-        (Provider.GOOGLE, "gemini-2.5-pro"),
+        (Provider.GOOGLE, "gemini-3-flash"),
+        (Provider.GOOGLE, "gemini-3.1-pro"),
     ],
     Capability.IMAGE_ANALYSIS: [
-        (Provider.GOOGLE, "gemini-2.5-flash"),
+        (Provider.GOOGLE, "gemini-3-flash"),
         (Provider.ZAI, "glm-5.1"),
     ],
     Capability.LONG_DOCUMENT: [
-        (Provider.GOOGLE, "gemini-2.5-flash"),     # 1M context, nearly free
-        (Provider.ZAI, "glm-5.1"),                 # 200K context
-        (Provider.ANTHROPIC, "claude-sonnet-4-6"),  # 200K context
+        (Provider.GOOGLE, "gemini-3-flash"),        # 1M context
+        (Provider.ZAI, "glm-5.1"),                  # 200K context
+        (Provider.ANTHROPIC, "claude-sonnet-4-6"),   # 1M context
     ],
 }
 
@@ -238,6 +292,21 @@ class ModelRouter:
             except ImportError:
                 logger.warning("router.zai_needs_openai_sdk")
 
+        # xAI / Grok (hooks, headlines — OpenAI-compatible API)
+        if settings.XAI_API_KEY:
+            try:
+                import openai
+                self._providers[Provider.XAI] = openai.AsyncOpenAI(
+                    base_url=settings.XAI_BASE_URL,
+                    api_key=settings.XAI_API_KEY,
+                )
+                logger.info(
+                    "router.provider_ready provider=xai model=%s",
+                    settings.XAI_MODEL,
+                )
+            except ImportError:
+                logger.warning("router.xai_needs_openai_sdk")
+
         # Local LLM (Ollama, vLLM — OpenAI-compatible API)
         if settings.LOCAL_LLM_BASE_URL and settings.LOCAL_LLM_MODEL:
             try:
@@ -261,11 +330,12 @@ class ModelRouter:
         routes = CAPABILITY_ROUTING.get(capability, [])
         for provider, model in routes:
             if provider in self._providers:
-                # LOCAL and ZAI use model from config, not routing table
                 if provider == Provider.LOCAL:
                     model = settings.LOCAL_LLM_MODEL
                 elif provider == Provider.ZAI:
                     model = model or settings.ZAI_MODEL
+                elif provider == Provider.XAI:
+                    model = settings.XAI_MODEL
                 return provider, model
 
         # Fallback: use any available provider with a reasonable model
@@ -275,9 +345,11 @@ class ModelRouter:
             if provider == Provider.ANTHROPIC:
                 return provider, "claude-sonnet-4-6"
             if provider == Provider.GOOGLE:
-                return provider, "gemini-2.5-flash"
+                return provider, "gemini-3-flash"
             if provider == Provider.OPENAI:
-                return provider, "gpt-4.1-mini"
+                return provider, "gpt-5.4"
+            if provider == Provider.XAI:
+                return provider, settings.XAI_MODEL
             if provider == Provider.LOCAL:
                 return provider, settings.LOCAL_LLM_MODEL
 
@@ -341,6 +413,11 @@ class ModelRouter:
         elif provider == Provider.ZAI:
             response = await self._generate_openai_compat(
                 Provider.ZAI, model, system_prompt, user_prompt,
+                temperature, max_tokens,
+            )
+        elif provider == Provider.XAI:
+            response = await self._generate_openai_compat(
+                Provider.XAI, model, system_prompt, user_prompt,
                 temperature, max_tokens,
             )
         elif provider == Provider.LOCAL:

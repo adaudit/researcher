@@ -49,10 +49,19 @@ class Settings(BaseSettings):
     LOCAL_LLM_BASE_URL: str = ""  # e.g. "http://localhost:11434/v1" for Ollama
     LOCAL_LLM_MODEL: str = ""     # e.g. "gemma4:26b", "gemma4:31b", "llama3.3:70b"
 
+    # xAI / Grok (hooks, headlines, punchy short-form — X-corpus-trained)
+    XAI_API_KEY: str = ""
+    XAI_BASE_URL: str = "https://api.x.ai/v1"
+    XAI_MODEL: str = "grok-4"
+    XAI_FAST_MODEL: str = "grok-4.1-fast"
+
     # TwelveLabs (video embeddings via Marengo — $0.0015/min)
     TWELVELABS_API_KEY: str = ""
     TWELVELABS_BASE_URL: str = "https://api.twelvelabs.io/v1.3"
     TWELVELABS_EMBED_MODEL: str = "Marengo-retrieval-2.7"
+
+    # SerpAPI (Google Scholar search — free tier 250/month)
+    SERPAPI_KEY: str = ""
 
     # Acquisition — ScrapCreators (social platform data)
     SCRAPECREATORS_API_KEY: str = ""

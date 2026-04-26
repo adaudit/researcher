@@ -9,15 +9,24 @@ Guard:  Must include mechanism bridge
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.prompts.systems import BRIEF_COMPOSER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
 from app.knowledge.base_training import get_training_context
+from app.services.intelligence.refinement_engine import COPY_CRITERIA, refinement_engine
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import BRIEF_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
+
+BRIEF_CRITERIA = [
+    c for c in COPY_CRITERIA
+    if c.name in ("mechanism_bridge", "proof_density", "anti_generic", "hook_strength")
+]
 
 
 class BriefComposerWorker(BaseWorker):
@@ -71,14 +80,20 @@ class BriefComposerWorker(BaseWorker):
         seed_text = json.dumps(seeds, indent=1, default=str) if seeds else "No specific seeds — generate from evidence."
 
         training_context = get_training_context()
-        analysis = await router.generate(
+        system_prompt = f"{BRIEF_COMPOSER_SYSTEM}\n\n{training_context}"
+        full_context = (
+            f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n\n"
+            f"STRATEGY CONTEXT:\n{strategy_context}\n\n"
+            f"SEEDS:\n{seed_text}"
+        )
+
+        # Initial generation
+        initial = await router.generate(
             capability=Capability.CREATIVE_GENERATION,
-            system_prompt=f"{BRIEF_COMPOSER_SYSTEM}\n\n{training_context}",
+            system_prompt=system_prompt,
             user_prompt=(
                 f"Compose strategic briefs using the following inputs.\n\n"
-                f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n\n"
-                f"STRATEGY CONTEXT:\n{strategy_context}\n\n"
-                f"SEEDS:\n{seed_text}\n\n"
+                f"{full_context}\n\n"
                 f"Create 3-5 briefs targeting different awareness levels. "
                 f"Each MUST have a mechanism bridge and anti-generic rules."
             ),
@@ -88,6 +103,33 @@ class BriefComposerWorker(BaseWorker):
             context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
         )
 
+        # 10-pass refinement with per-weakness targeted context
+        async def _weakness_resolver(weaknesses: list[str]) -> str:
+            from app.services.intelligence.weakness_context_map import (
+                get_top_weakness_context,
+            )
+            return await get_top_weakness_context(
+                weaknesses, account_id, offer_id,
+            )
+
+        refined = await refinement_engine.refine(
+            task_type="copy_generation",
+            initial_output=initial,
+            system_prompt=system_prompt,
+            context=full_context[:5000],
+            max_passes=10,
+            threshold=7.5,
+            criteria=BRIEF_CRITERIA,
+            weakness_context_resolver=_weakness_resolver,
+        )
+
+        logger.info(
+            "brief_composer.refined passes=%d score=%.1f improved=%s",
+            refined.passes_completed, refined.final_grade.overall_score,
+            refined.improved,
+        )
+
+        analysis = refined.final_output
         quality_warnings: list[str] = []
         for brief in analysis.get("briefs", []):
             if not brief.get("mechanism_bridge"):
@@ -98,6 +140,14 @@ class BriefComposerWorker(BaseWorker):
         return WorkerOutput(
             worker_name=self.contract.skill_name,
             success=not analysis.get("_parse_error"),
-            data={"brief_pack": analysis},
+            data={
+                "brief_pack": analysis,
+                "refinement_passes": refined.passes_completed,
+                "refinement_score": refined.final_grade.overall_score,
+                "grade_trajectory": [
+                    {"pass": g.pass_number, "score": g.overall_score}
+                    for g in refined.all_grades
+                ],
+            },
             quality_warnings=quality_warnings,
         )

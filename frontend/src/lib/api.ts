@@ -92,3 +92,22 @@ export const seeds = {
   submit: (token: string, accountId: string, offerId: string, data: any) =>
     apiFetch<any>(`/seeds/${offerId}`, { method: "POST", token, body: JSON.stringify(data), headers: { "X-Account-Id": accountId } }),
 };
+
+// Approvals
+export const approvals = {
+  list: (token: string, accountId: string, status = "pending", type?: string) => {
+    const params = new URLSearchParams({ status_filter: status });
+    if (type) params.set("approval_type", type);
+    return apiFetch<any[]>(`/approvals?${params}`, { token, headers: { "X-Account-Id": accountId } });
+  },
+  get: (token: string, accountId: string, approvalId: string) =>
+    apiFetch<any>(`/approvals/${approvalId}`, { token, headers: { "X-Account-Id": accountId } }),
+  decide: (token: string, accountId: string, approvalId: string, action: "approve" | "reject", rejectionReason?: string) =>
+    apiFetch<any>(`/approvals/${approvalId}/decide`, {
+      method: "POST", token,
+      body: JSON.stringify({ action, rejection_reason: rejectionReason }),
+      headers: { "X-Account-Id": accountId },
+    }),
+  stats: (token: string, accountId: string) =>
+    apiFetch<{ pending_count: number }>("/approvals/stats/summary", { token, headers: { "X-Account-Id": accountId } }),
+};

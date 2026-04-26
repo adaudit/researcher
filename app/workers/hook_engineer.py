@@ -8,15 +8,19 @@ Guard:  Awareness level must be explicit; no generic hooks
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.prompts.systems import HOOK_ENGINEER_SYSTEM
 from app.services.hindsight.banks import BankType
 from app.services.hindsight.memory import recall_for_worker
 from app.knowledge.base_training import get_training_context
+from app.services.intelligence.refinement_engine import HOOK_CRITERIA, refinement_engine
 from app.services.llm.router import Capability, router
 from app.services.llm.schemas import HOOK_TERRITORY_SCHEMA
 from app.workers.base import BaseWorker, SkillContract, WorkerInput, WorkerOutput
+
+logger = logging.getLogger(__name__)
 
 
 class HookEngineerWorker(BaseWorker):
@@ -73,28 +77,64 @@ class HookEngineerWorker(BaseWorker):
             upstream_context += f"\nDIFFERENTIATION MAP:\n{_format_dict(diff_map)}\n"
 
         training_context = get_training_context()
-        analysis = await router.generate(
+        system_prompt = f"{HOOK_ENGINEER_SYSTEM}\n\n{training_context}"
+        user_prompt = (
+            f"Design hook territories for this offer based on the evidence below.\n\n"
+            f"Create hooks for ALL 5 awareness levels. "
+            f"Each hook must have a proof anchor and mechanism connection.\n\n"
+            f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n"
+            f"{upstream_context}"
+        )
+
+        # Initial generation
+        initial = await router.generate(
             capability=Capability.CREATIVE_GENERATION,
-            system_prompt=f"{HOOK_ENGINEER_SYSTEM}\n\n{training_context}",
-            user_prompt=(
-                f"Design hook territories for this offer based on the evidence below.\n\n"
-                f"Create hooks for ALL 5 awareness levels. "
-                f"Each hook must have a proof anchor and mechanism connection.\n\n"
-                f"RECALLED EVIDENCE ({len(memories)} items):\n{evidence_text}\n"
-                f"{upstream_context}"
-            ),
-            temperature=0.5,  # Higher for creative output
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.5,
             max_tokens=6000,
             json_schema=HOOK_TERRITORY_SCHEMA,
             context_documents=[evidence_text] if len(evidence_text) > 3000 else None,
         )
 
+        # 10-pass refinement with per-weakness targeted context
+        async def _weakness_resolver(weaknesses: list[str]) -> str:
+            from app.services.intelligence.weakness_context_map import (
+                get_top_weakness_context,
+            )
+            return await get_top_weakness_context(
+                weaknesses, account_id, offer_id,
+            )
+
+        refined = await refinement_engine.refine(
+            task_type="hook_generation",
+            initial_output=initial,
+            system_prompt=system_prompt,
+            context=evidence_text[:3000] + upstream_context,
+            max_passes=10,
+            threshold=7.5,
+            criteria=HOOK_CRITERIA,
+            weakness_context_resolver=_weakness_resolver,
+        )
+
+        logger.info(
+            "hook_engineer.refined passes=%d score=%.1f improved=%s",
+            refined.passes_completed, refined.final_grade.overall_score,
+            refined.improved,
+        )
+
         return WorkerOutput(
             worker_name=self.contract.skill_name,
-            success=not analysis.get("_parse_error"),
+            success=not refined.final_output.get("_parse_error"),
             data={
-                "hook_territory_map": analysis,
+                "hook_territory_map": refined.final_output,
                 "evidence_count": len(memories),
+                "refinement_passes": refined.passes_completed,
+                "refinement_score": refined.final_grade.overall_score,
+                "grade_trajectory": [
+                    {"pass": g.pass_number, "score": g.overall_score}
+                    for g in refined.all_grades
+                ],
             },
         )
 

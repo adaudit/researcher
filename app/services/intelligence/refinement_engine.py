@@ -23,11 +23,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from app.services.llm.router import Capability, router
 
 logger = logging.getLogger(__name__)
+
+# Type alias for async weakness context resolvers
+WeaknessContextResolver = Callable[[list[str]], Awaitable[str]]
 
 
 @dataclass
@@ -128,6 +131,7 @@ class RefinementEngine:
         max_passes: int = 3,
         threshold: float = 7.0,
         criteria: list[GradingCriteria] | None = None,
+        weakness_context_resolver: WeaknessContextResolver | None = None,
     ) -> RefinementResult:
         """Run the refinement loop.
 
@@ -139,6 +143,10 @@ class RefinementEngine:
             max_passes: Maximum refinement passes (up to 10)
             threshold: Overall score needed to stop early (1-10 scale)
             criteria: Custom grading criteria (defaults to task-type standard)
+            weakness_context_resolver: Async callable that takes a list of
+                weakness strings and returns targeted Hindsight context. When
+                provided, each refinement pass gets specific examples for the
+                exact dimensions that are failing.
         """
         max_passes = min(max_passes, 10)
         criteria = criteria or CRITERIA_MAP.get(task_type, HOOK_CRITERIA)
@@ -146,16 +154,26 @@ class RefinementEngine:
         all_outputs: list[dict[str, Any]] = [initial_output]
         all_grades: list[GradeResult] = []
         current_output = initial_output
+        best_score = 0.0
+        best_idx = 0
+        plateau_count = 0
 
         for pass_num in range(1, max_passes + 1):
-            # Grade current output
             grade = await self._grade(current_output, criteria, pass_num)
             all_grades.append(grade)
 
             logger.info(
-                "refinement.graded task=%s pass=%d score=%.1f threshold=%.1f",
-                task_type, pass_num, grade.overall_score, threshold,
+                "refinement.graded task=%s pass=%d score=%.1f threshold=%.1f best=%.1f",
+                task_type, pass_num, grade.overall_score, threshold, best_score,
             )
+
+            # Track best pass
+            if grade.overall_score > best_score:
+                best_score = grade.overall_score
+                best_idx = len(all_outputs) - 1
+                plateau_count = 0
+            else:
+                plateau_count += 1
 
             if grade.passes_threshold:
                 return RefinementResult(
@@ -167,22 +185,51 @@ class RefinementEngine:
                     improved=pass_num > 1,
                 )
 
+            # Plateau detection: stop if score hasn't improved for 2 passes
+            if plateau_count >= 2:
+                logger.info(
+                    "refinement.plateau task=%s pass=%d best_score=%.1f",
+                    task_type, pass_num, best_score,
+                )
+                break
+
             # Refine based on weaknesses
             if pass_num < max_passes:
+                # Pull targeted context for the specific weaknesses
+                extra_context = ""
+                if weakness_context_resolver and grade.weaknesses:
+                    try:
+                        extra_context = await weakness_context_resolver(
+                            grade.weaknesses,
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "refinement.weakness_context_failed pass=%d error=%s",
+                            pass_num, exc,
+                        )
+
                 refined = await self._refine_pass(
-                    current_output, grade, system_prompt, context, pass_num,
+                    current_output, grade, system_prompt,
+                    context + extra_context, pass_num,
                 )
+
                 if refined and not refined.get("_parse_error"):
+                    # Check for regression — if new output scores worse
+                    # than current, the pass produced degraded output.
+                    # We still accept it and let the best_idx tracking
+                    # ensure we return the best version at the end.
                     current_output = refined
                     all_outputs.append(refined)
-
-        # Return best output across all passes
-        best_idx = max(range(len(all_grades)), key=lambda i: all_grades[i].overall_score)
+                else:
+                    logger.warning(
+                        "refinement.parse_failed task=%s pass=%d",
+                        task_type, pass_num,
+                    )
 
         return RefinementResult(
             final_output=all_outputs[best_idx],
             final_grade=all_grades[best_idx],
-            passes_completed=max_passes,
+            passes_completed=len(all_grades),
             all_grades=all_grades,
             all_outputs=all_outputs,
             improved=best_idx > 0,
