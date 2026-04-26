@@ -93,6 +93,29 @@ export const seeds = {
     apiFetch<any>(`/seeds/${offerId}`, { method: "POST", token, body: JSON.stringify(data), headers: { "X-Account-Id": accountId } }),
 };
 
+// Dashboard
+export const dashboard = {
+  summary: (token: string, accountId: string) =>
+    apiFetch<{
+      active_ads: number;
+      winners: number;
+      pending_approvals: number;
+      pending_questions: number;
+      active_workflows: number;
+      completed_workflows: number;
+    }>("/dashboard/summary", { token, headers: { "X-Account-Id": accountId } }),
+};
+
+// Workflows
+export const workflows = {
+  list: (token: string, accountId: string) =>
+    apiFetch<any[]>("/workflows", { token, headers: { "X-Account-Id": accountId } }),
+  active: (token: string, accountId: string) =>
+    apiFetch<any[]>("/workflows/active", { token, headers: { "X-Account-Id": accountId } }),
+  get: (token: string, accountId: string, workflowId: string) =>
+    apiFetch<any>(`/workflows/${workflowId}`, { token, headers: { "X-Account-Id": accountId } }),
+};
+
 // Approvals
 export const approvals = {
   list: (token: string, accountId: string, status = "pending", type?: string) => {

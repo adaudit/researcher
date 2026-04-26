@@ -1,14 +1,19 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.api.v1 import router as api_v1_router
 from app.core.config import settings
+from app.core.startup_validation import validate_startup_config
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ARG001
-    # Startup: initialize connections, warm caches, etc.
+    # Startup: validate config (raises in production on missing required keys)
+    validate_startup_config()
     yield
     # Shutdown: cleanup
     from app.db.session import engine

@@ -309,6 +309,8 @@ class ResearchAgentWorker(BaseWorker):
                     results = await self._search_scrapling(query)
                 elif tool_name in (ToolName.FDA_API, ToolName.FTC_API):
                     results = await self._search_regulatory(query, tool_name.value)
+                elif tool_name == ToolName.BROWSER_HARNESS:
+                    results = await self._search_browser_agent(query, question_type)
 
                 if results:
                     logger.info(
@@ -368,6 +370,30 @@ class ResearchAgentWorker(BaseWorker):
     ) -> list[dict[str, Any]]:
         from app.services.acquisition.connectors.regulatory_client import regulatory_client
         return await regulatory_client.search(query, source=source, limit=5)
+
+    async def _search_browser_agent(
+        self, query: str, question_type: str,
+    ) -> list[dict[str, Any]]:
+        """Use browser-harness as universal fallback for sites APIs can't reach."""
+        from app.services.acquisition.connectors.browser_agent import browser_agent
+        from urllib.parse import quote_plus
+
+        # Construct a targeted search URL based on question type
+        url = f"https://duckduckgo.com/?q={quote_plus(query)}&t=h_"
+        result = await browser_agent.navigate_and_extract(
+            url=url,
+            goal=f"Extract {question_type} information related to: {query}. "
+                 "Capture the most relevant results with their URLs and snippets.",
+            capture_screenshot=False,
+        )
+
+        if not result.success:
+            return []
+
+        data = result.extracted_data
+        if isinstance(data.get("data"), list):
+            return data["data"]
+        return [data]
 
     async def _evaluate_sufficiency(
         self,

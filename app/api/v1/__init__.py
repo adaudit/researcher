@@ -6,6 +6,7 @@ from app.api.v1.artifacts import router as artifacts_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.costs import router as costs_router
 from app.api.v1.creative_library import router as creative_library_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.iterations import router as iterations_router
 from app.api.v1.landing_pages import router as landing_pages_router
 from app.api.v1.memory import router as memory_router
@@ -17,6 +18,7 @@ from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.primers import router as primers_router
 from app.api.v1.seeds import router as seeds_router
 from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.workflows import router as workflows_router
 
 router = APIRouter()
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
@@ -36,3 +38,5 @@ router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 router.include_router(primers_router, prefix="/primers", tags=["primers"])
 router.include_router(seeds_router, prefix="/seeds", tags=["seeds"])
 router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
+router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+router.include_router(workflows_router, prefix="/workflows", tags=["workflows"])
