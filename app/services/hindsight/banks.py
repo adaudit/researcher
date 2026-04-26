@@ -34,6 +34,7 @@ class BankType(str, Enum):
     PRIMERS = "primers"
     SKILLS = "skills"       # Per-account learnable skill files
     GLOBAL = "global"       # Cross-business aggregated intelligence
+    CULTURE = "culture"     # Cultural pulse: trending concerns, media effects, seasonal
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,11 @@ BANK_SPECS: dict[BankType, BankSpec] = {
         BankType.GLOBAL,
         "Cross-business aggregated patterns — anonymized learnings from all accounts",
         "mental_model",
+    ),
+    BankType.CULTURE: BankSpec(
+        BankType.CULTURE,
+        "Cultural pulse: trending concerns, media effects, seasonal shifts, regulatory news",
+        "world_fact",
     ),
 }
 
@@ -214,6 +220,13 @@ def recall_scope_for_worker(worker_name: str, account_id: str, offer_id: str | N
         # Intelligence workers
         "ad_analyzer": [BankType.CREATIVE, BankType.OFFER, BankType.SKILLS],
         "creative_producer": [BankType.OFFER, BankType.CREATIVE, BankType.VOC, BankType.PRIMERS, BankType.SKILLS],
+        # Research agent (broad scope — needs context to plan research)
+        "research_agent": [
+            BankType.OFFER, BankType.RESEARCH, BankType.VOC,
+            BankType.CREATIVE, BankType.CULTURE,
+        ],
+        # Cultural pulse (weekly scan)
+        "cultural_pulse": [BankType.CULTURE, BankType.OFFER, BankType.VOC],
     }
 
     bank_types = scope_map.get(worker_name, [])

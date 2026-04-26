@@ -324,6 +324,70 @@ async def _weekly_full_cycle_async() -> dict[str, Any]:
     return {"status": "completed", "accounts": accounts_processed, "step_log": step_log}
 
 
+# ── Weekly: Cultural Pulse ────────────────────────────────────────
+
+@celery_app.task(name="autonomous.weekly_cultural_pulse")
+def weekly_cultural_pulse() -> dict[str, Any]:
+    """Weekly cultural scan — runs before the full cycle so ideation
+    has fresh cultural context (trending concerns, media effects, etc.)."""
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(
+        _weekly_cultural_pulse_async()
+    )
+
+
+async def _weekly_cultural_pulse_async() -> dict[str, Any]:
+    from sqlalchemy import select
+    from app.db.models.account import Account
+    from app.db.models.offer import Offer
+    from app.db.session import async_session_factory
+    from app.workers.cultural_pulse import CulturalPulseWorker
+
+    step_log = [build_step_log_entry("cultural_pulse", "started")]
+    scanned = 0
+
+    async with async_session_factory() as db:
+        stmt = select(Account).where(Account.is_active == True)
+        result = await db.execute(stmt)
+        accounts = list(result.scalars().all())
+
+        for account in accounts:
+            offer_stmt = select(Offer).where(
+                Offer.account_id == account.id,
+                Offer.status == "active",
+            )
+            offer_result = await db.execute(offer_stmt)
+            offers = list(offer_result.scalars().all())
+
+            for offer in offers:
+                try:
+                    worker = CulturalPulseWorker()
+                    await worker.run(WorkerInput(
+                        account_id=account.id,
+                        offer_id=offer.id,
+                        params={
+                            "niche_keywords": [
+                                k for k in [
+                                    offer.mechanism or "",
+                                    offer.name or "",
+                                    getattr(offer, "target_audience", "") or "",
+                                ] if k
+                            ],
+                        },
+                    ))
+                    scanned += 1
+                except Exception as exc:
+                    logger.warning(
+                        "cultural_pulse.scan_failed account=%s offer=%s error=%s",
+                        account.id, offer.id, exc,
+                    )
+
+    step_log.append(build_step_log_entry(
+        "cultural_pulse", "completed", f"Scanned {scanned} offers",
+    ))
+    return {"status": "completed", "scanned": scanned, "step_log": step_log}
+
+
 # ── Monthly: Cross-Business Learning ─────────────────────────────
 
 @celery_app.task(name="autonomous.monthly_cross_business")

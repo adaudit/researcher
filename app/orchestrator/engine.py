@@ -84,6 +84,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.orchestrator.workflows.weekly_refresh.run_iteration_synthesis",
         "schedule": 604800.0,
     },
+    # Weekly cultural pulse — runs before weekly-full-cycle so ideation
+    # has fresh cultural context. Offset by 2 hours (runs at T-2h).
+    "weekly-cultural-pulse": {
+        "task": "autonomous.weekly_cultural_pulse",
+        "schedule": 604800.0,
+    },
 }
 
 # Register autonomous tasks lazily to avoid circular imports.
