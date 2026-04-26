@@ -388,6 +388,146 @@ async def _weekly_cultural_pulse_async() -> dict[str, Any]:
     return {"status": "completed", "scanned": scanned, "step_log": step_log}
 
 
+# ── Daily: RSS Poll → Research Inbox ─────────────────────────────
+
+@celery_app.task(name="autonomous.daily_rss_poll")
+def daily_rss_poll() -> dict[str, Any]:
+    """Daily RSS poll for sources without native webhooks.
+
+    Posts each new item into research_inbox where it sits until the
+    weekly research_synthesis worker processes it. This treats RSS as
+    a slow webhook — same downstream pipeline.
+    """
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(_daily_rss_poll_async())
+
+
+async def _daily_rss_poll_async() -> dict[str, Any]:
+    from sqlalchemy import select
+    from app.db.models.account import Account
+    from app.db.models.offer import Offer
+    from app.db.session import async_session_factory
+    from app.services.acquisition.rss_to_inbox import poll_default_sources_for_offer
+
+    step_log = [build_step_log_entry("rss_poll", "started")]
+    total_ingested = 0
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(Account).where(Account.is_active == True)
+        )
+        accounts = list(result.scalars().all())
+
+        for account in accounts:
+            offer_result = await db.execute(
+                select(Offer).where(
+                    Offer.account_id == account.id,
+                    Offer.status == "active",
+                )
+            )
+            offers = list(offer_result.scalars().all())
+
+            for offer in offers:
+                keywords = [
+                    k for k in [
+                        offer.mechanism or "",
+                        offer.name or "",
+                    ] if k
+                ]
+                if not keywords:
+                    continue
+
+                try:
+                    results = await poll_default_sources_for_offer(
+                        account_id=account.id,
+                        offer_id=offer.id,
+                        keywords=keywords,
+                    )
+                    ingested = sum(r.get("ingested", 0) for r in results)
+                    total_ingested += ingested
+                except Exception as exc:
+                    logger.warning(
+                        "rss_poll.offer_failed account=%s offer=%s error=%s",
+                        account.id, offer.id, exc,
+                    )
+
+    step_log.append(build_step_log_entry(
+        "rss_poll", "completed", f"Ingested {total_ingested} items",
+    ))
+    return {"status": "completed", "ingested": total_ingested, "step_log": step_log}
+
+
+# ── Weekly: Research Synthesis (the inbox processor) ─────────────
+
+@celery_app.task(name="autonomous.weekly_research_synthesis")
+def weekly_research_synthesis() -> dict[str, Any]:
+    """Weekly batch: score relevance, synthesize findings, retain, cleanup.
+
+    Processes everything in research_inbox accumulated over the past 7 days
+    from webhooks + RSS polls. Filters with cheap LLM, synthesizes the top
+    20% with premium LLM, retains to RESEARCH/VOC/CULTURE banks.
+    """
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(
+        _weekly_research_synthesis_async()
+    )
+
+
+async def _weekly_research_synthesis_async() -> dict[str, Any]:
+    from sqlalchemy import select
+    from app.db.models.account import Account
+    from app.db.models.offer import Offer
+    from app.db.session import async_session_factory
+    from app.workers.research_synthesis import ResearchSynthesisWorker
+
+    step_log = [build_step_log_entry("research_synthesis", "started")]
+    accounts_processed = 0
+    total_findings = 0
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(Account).where(Account.is_active == True)
+        )
+        accounts = list(result.scalars().all())
+
+        worker = ResearchSynthesisWorker()
+
+        for account in accounts:
+            offer_result = await db.execute(
+                select(Offer).where(
+                    Offer.account_id == account.id,
+                    Offer.status == "active",
+                )
+            )
+            offers = list(offer_result.scalars().all())
+
+            for offer in offers:
+                try:
+                    out = await worker.run(WorkerInput(
+                        account_id=account.id,
+                        offer_id=offer.id,
+                        params={"days_back": 7},
+                    ))
+                    total_findings += out.data.get("findings_retained", 0)
+                    accounts_processed += 1
+                except Exception as exc:
+                    logger.warning(
+                        "research_synthesis.failed account=%s offer=%s error=%s",
+                        account.id, offer.id, exc,
+                    )
+
+    step_log.append(build_step_log_entry(
+        "research_synthesis", "completed",
+        f"Processed {accounts_processed} accounts, retained {total_findings} findings",
+    ))
+    return {
+        "status": "completed",
+        "accounts_processed": accounts_processed,
+        "findings_retained": total_findings,
+        "step_log": step_log,
+    }
+
+
 # ── Monthly: Cross-Business Learning ─────────────────────────────
 
 @celery_app.task(name="autonomous.monthly_cross_business")

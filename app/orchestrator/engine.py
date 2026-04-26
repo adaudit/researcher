@@ -90,6 +90,16 @@ celery_app.conf.beat_schedule = {
         "task": "autonomous.weekly_cultural_pulse",
         "schedule": 604800.0,
     },
+    # Daily RSS poll → research_inbox (sources without webhooks)
+    "daily-rss-poll": {
+        "task": "autonomous.daily_rss_poll",
+        "schedule": 86400.0,
+    },
+    # Weekly research synthesis: filter → score → synthesize → cleanup
+    "weekly-research-synthesis": {
+        "task": "autonomous.weekly_research_synthesis",
+        "schedule": 604800.0,
+    },
 }
 
 # Register autonomous tasks lazily to avoid circular imports.
